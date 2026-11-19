@@ -1,168 +1,142 @@
-// hud.js — the SOLMAR HEAT HUD: health, cash, wanted stars, clock, mission
-// objective, speed, weapon, toasts, center messages, and the live minimap.
-// The minimap is a top-down canvas: roads, blocks, landmarks, the mission
-// beacon, police, traffic and the player arrow, all rotating with the player.
-import { fmtCash, fmtClock } from './utils.js';
+// hud.js — the HUD: health, cash, wanted stars, clock, objectives, minimap.
+// The minimap is a 2D canvas: roads, the player, police, rivals and the
+// mission marker. Menus (title, pause, busted, wasted) are DOM overlays.
+import { G } from './state.js';
+import { clockString, moneyString } from './utils.js';
+import { wantedLabel } from './wanted.js';
+import { missionProgressText, missionMarkerPos } from './missions.js';
+import { BLOCK, HALF, BEACH_X } from './city.js';
 
-export class HUD {
-  constructor() {
-    this.el = {
-      healthFill: document.getElementById('health-fill'),
-      cash: document.getElementById('cash'),
-      stars: document.getElementById('stars'),
-      clock: document.getElementById('clock'),
-      missionTitle: document.getElementById('mission-title'),
-      missionDesc: document.getElementById('mission-desc'),
-      missionDist: document.getElementById('mission-dist'),
-      speed: document.getElementById('speed'),
-      weapon: document.getElementById('weapon'),
-      toast: document.getElementById('toast'),
-      crosshair: document.getElementById('crosshair'),
-      vignette: document.getElementById('vignette'),
-      centerMsg: document.getElementById('center-msg'),
-      centerTitle: document.getElementById('center-title'),
-      centerText: document.getElementById('center-text'),
-      centerSub: document.getElementById('center-sub'),
-      hint: document.getElementById('hint'),
-      minimap: document.getElementById('minimap'),
-    };
-    this.minimapCtx = this.el.minimap.getContext('2d');
-    this.toastTimer = null;
-    this.centerTimer = null;
+let els = {};
+let mapCtx = null;
+
+export function bindHud() {
+  els = {
+    health: document.getElementById('hud-health-fill'),
+    healthText: document.getElementById('hud-health-text'),
+    cash: document.getElementById('hud-cash'),
+    stars: document.getElementById('hud-stars'),
+    clock: document.getElementById('hud-clock'),
+    day: document.getElementById('hud-day'),
+    objective: document.getElementById('hud-objective'),
+    objectiveTitle: document.getElementById('hud-objective-title'),
+    speed: document.getElementById('hud-speed'),
+    weapon: document.getElementById('hud-weapon'),
+    ammo: document.getElementById('hud-ammo'),
+    message: document.getElementById('hud-message'),
+    timer: document.getElementById('hud-timer'),
+    map: document.getElementById('minimap'),
+  };
+  if (els.map) mapCtx = els.map.getContext('2d');
+}
+
+export function updateHud() {
+  if (!els.health) return;
+  els.health.style.width = `${G.health}%`;
+  els.health.style.background = G.health > 50 ? '#3a9a5a' : G.health > 25 ? '#d8a03a' : '#c23a3a';
+  els.healthText.textContent = `${Math.ceil(G.health)}`;
+  els.cash.textContent = moneyString(G.cash);
+  els.stars.textContent = wantedLabel();
+  els.stars.style.color = G.wanted > 0 ? '#ffd83a' : '#888888';
+  els.clock.textContent = clockString(G.playTime);
+  els.day.textContent = `DAY ${G.day}`;
+  const m = G.mission;
+  if (m) {
+    els.objectiveTitle.textContent = m.def.title;
+    els.objective.textContent = missionProgressText();
+  } else if (G.missionIndex < 4) {
+    els.objectiveTitle.textContent = 'FREE ROAM';
+    els.objective.textContent = 'Explore Neon Harbor. Press M for the next job.';
+  } else {
+    els.objectiveTitle.textContent = 'FREE ROAM';
+    els.objective.textContent = 'All jobs done. The city is yours.';
   }
-
-  update(G, missionStage, missionTarget, missionDist, speedMph) {
-    const hp = Math.max(0, Math.min(100, G.health));
-    this.el.healthFill.style.width = hp + '%';
-    this.el.healthFill.style.background = hp > 50
-      ? 'linear-gradient(90deg, #37d67a, #9be15d)'
-      : hp > 25 ? 'linear-gradient(90deg, #e8a83a, #f5d76e)' : 'linear-gradient(90deg, #d83a3a, #f56e6e)';
-    this.el.cash.textContent = fmtCash(G.cash);
-    let stars = '';
-    for (let i = 0; i < 5; i++) stars += i < G.wanted ? '★' : '<span class="dim">★</span>';
-    this.el.stars.innerHTML = stars;
-    this.el.clock.textContent = fmtClock(G.playTime);
-    if (missionStage) {
-      this.el.missionTitle.textContent = missionStage.title;
-      let desc = missionStage.desc;
-      if (missionStage.timer && G.mission) desc += ` — ${Math.ceil(G.mission.timer)}s left`;
-      if (missionStage.hold && G.mission) desc += ` — ${Math.max(0, missionStage.hold - G.mission.holdProgress).toFixed(1)}s`;
-      if (missionStage.kills && G.mission) desc = `Take out all ${missionStage.kills} Vipers. ${G.mission.kills} / ${missionStage.kills} down.`;
-      this.el.missionDesc.textContent = desc;
-      this.el.missionDist.textContent = missionTarget ? `OBJECTIVE ${Math.round(missionDist)}m — FOLLOW THE GOLD BEACON` : '';
-    } else {
-      this.el.missionTitle.textContent = G.missionIndex >= 4 ? 'LEGEND OF SOLMAR' : 'FREE ROAM';
-      this.el.missionDesc.textContent = G.missionIndex >= 4
-        ? 'All jobs done. Solmar City is yours, Rio.'
-        : 'Explore Solmar City. Steal a car, earn cash, stay out of trouble. Next job starts soon…';
-      this.el.missionDist.textContent = '';
-    }
-    this.el.speed.innerHTML = `${Math.round(Math.abs(speedMph))} <small>MPH</small>`;
-    const weaponName = G.weapon === 'pistol' ? `PISTOL · ${G.ammo} / ${G.reserveAmmo}` : 'FISTS';
-    this.el.weapon.textContent = weaponName;
-    this.el.crosshair.style.display = G.weapon === 'pistol' && !G.player?.inCar ? 'block' : 'none';
-    this.el.vignette.style.opacity = String(Math.max(0, (55 - G.health) / 55) * 0.9);
+  els.speed.textContent = G.playerCar ? `${Math.round(Math.abs(G.playerCar.speed) * 2.2)} MPH` : '';
+  els.weapon.textContent = G.weapon === 'pistol' ? 'PISTOL' : 'FISTS';
+  els.ammo.textContent = G.weapon === 'pistol' ? `${G.ammo}/${G.reserveAmmo}` : '—';
+  els.timer.textContent = G.missionTimer > 0 ? `${Math.ceil(G.missionTimer)}s` : '';
+  if (G.message && G.playTime < G.messageUntil) {
+    els.message.textContent = G.message;
+    els.message.style.opacity = '1';
+  } else {
+    els.message.style.opacity = '0';
   }
+  drawMinimap();
+}
 
-  toast(text, ms = 4200) {
-    this.el.toast.textContent = text;
-    this.el.toast.style.opacity = '1';
-    clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => { this.el.toast.style.opacity = '0'; }, ms);
+function drawMinimap() {
+  if (!mapCtx || !G.city) return;
+  const S = 150, C = S / 2;
+  const scale = S / 560;
+  const ctx = mapCtx;
+  ctx.clearRect(0, 0, S, S);
+  ctx.fillStyle = '#12202a';
+  ctx.fillRect(0, 0, S, S);
+  // Ocean + beach.
+  ctx.fillStyle = '#1e6f9e';
+  ctx.fillRect(C + BEACH_X * scale, 0, S, S);
+  ctx.fillStyle = '#e0c98f';
+  ctx.fillRect(C + (BEACH_X - 30) * scale, 0, 30 * scale, S);
+  // Roads.
+  ctx.strokeStyle = '#4a4a55';
+  ctx.lineWidth = 3;
+  for (let i = -HALF; i <= HALF; i++) {
+    const c = C + i * BLOCK * scale;
+    ctx.beginPath(); ctx.moveTo(c, 0); ctx.lineTo(c, S); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, c); ctx.lineTo(S, c); ctx.stroke();
   }
-
-  center(title, text, sub = '', ms = 2600) {
-    this.el.centerTitle.textContent = title;
-    this.el.centerText.textContent = text;
-    this.el.centerSub.textContent = sub;
-    this.el.centerMsg.style.display = 'block';
-    clearTimeout(this.centerTimer);
-    this.centerTimer = setTimeout(() => { this.el.centerMsg.style.display = 'none'; }, ms);
+  // Landmarks.
+  ctx.fillStyle = '#d8b83a';
+  for (const lm of Object.values(G.city.landmarks)) {
+    ctx.fillRect(C + lm.pos.x * scale - 2, C + lm.pos.z * scale - 2, 4, 4);
   }
-
-  hideCenter() { this.el.centerMsg.style.display = 'none'; }
-
-  drawMinimap(G, city, missionTarget) {
-    const ctx = this.minimapCtx;
-    const S = 196;
-    const scale = S / 440; // city + margin
-    const toMap = (x, z) => [S / 2 + x * scale, S / 2 + z * scale];
-    ctx.clearRect(0, 0, S, S);
-    // water + land
-    ctx.fillStyle = '#16283e';
-    ctx.fillRect(0, 0, S, S);
-    ctx.fillStyle = '#2a2f38';
-    ctx.fillRect(0, 0, S - 22, S);
-    ctx.fillStyle = '#e8d9a0';
-    ctx.fillRect(S - 22, 0, 6, S);
-    ctx.fillStyle = '#2a7ab8';
-    ctx.fillRect(S - 16, 0, 16, S);
-    // roads
-    ctx.strokeStyle = '#4a4f5a';
-    ctx.lineWidth = 4;
-    for (const p of city.roadLines) {
-      const [x1, y1] = toMap(p, -198);
-      const [x2, y2] = toMap(p, 198);
-      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-      const [x3, y3] = toMap(-198, p);
-      const [x4, y4] = toMap(198, p);
-      ctx.beginPath(); ctx.moveTo(x3, y3); ctx.lineTo(x4, y4); ctx.stroke();
-    }
-    // blocks
-    ctx.fillStyle = '#3a3f4a';
-    for (const b of city.blockCenters) {
-      const [x, y] = toMap(b.x - 14, b.z - 14);
-      ctx.fillRect(x, y, 28 * scale, 28 * scale);
-    }
-    // landmarks
-    const lm = city.landmarks;
-    const drawLm = (p, color, label) => {
-      const [x, y] = toMap(p.x, p.z);
-      ctx.fillStyle = color;
-      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
-    };
-    drawLm(lm.bank, '#e8c860');
-    drawLm(lm.station, '#4a6ab8');
-    drawLm(lm.hospital, '#f0f0e8');
-    drawLm(lm.safehouse, '#c96a4a');
-    drawLm(lm.marina, '#3aa86a');
-    // mission beacon
-    if (missionTarget) {
-      const [x, y] = toMap(missionTarget.x, missionTarget.z);
-      const pulse = 6 + Math.sin(G.time * 4) * 2;
-      ctx.fillStyle = '#ffb02e';
-      ctx.beginPath(); ctx.arc(x, y, pulse, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(x, y, pulse + 3, 0, Math.PI * 2); ctx.stroke();
-    }
-    // traffic + police dots
-    ctx.fillStyle = '#cfd2dc';
-    for (const c of G.trafficCars) {
-      const [x, y] = toMap(c.pos.x, c.pos.z);
-      ctx.fillRect(x - 1, y - 1, 2, 2);
-    }
-    ctx.fillStyle = '#5a8aff';
-    for (const c of G.policeCars) {
-      const [x, y] = toMap(c.pos.x, c.pos.z);
-      ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
-    }
-    // player arrow (rotates with heading)
-    const px = G.player ? G.player.pos.x : 0;
-    const pz = G.player ? G.player.pos.z : 0;
-    const [mx, my] = toMap(px, pz);
-    const heading = G.player ? G.player.heading : 0;
-    ctx.save();
-    ctx.translate(mx, my);
-    ctx.rotate(heading);
-    ctx.fillStyle = '#fff';
+  // Mission marker (pulsing yellow diamond).
+  const mp = missionMarkerPos();
+  if (mp) {
+    const pulse = 4 + Math.sin(G.playTime * 5) * 2;
+    ctx.fillStyle = '#ffe93a';
     ctx.beginPath();
-    ctx.moveTo(0, -7); ctx.lineTo(5, 5); ctx.lineTo(-5, 5); ctx.closePath();
+    ctx.moveTo(C + mp.x * scale, C + mp.z * scale - pulse);
+    ctx.lineTo(C + mp.x * scale + pulse, C + mp.z * scale);
+    ctx.lineTo(C + mp.x * scale, C + mp.z * scale + pulse);
+    ctx.lineTo(C + mp.x * scale - pulse, C + mp.z * scale);
     ctx.fill();
-    ctx.restore();
-    // north tick
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 10px sans-serif';
-    ctx.fillText('N', S / 2 - 3, 12);
   }
+  // Police (red dots), rivals (orange), player (green, with heading tick).
+  ctx.fillStyle = '#ff3a3a';
+  for (const car of G.policeCars) {
+    ctx.fillRect(C + car.pos.x * scale - 2, C + car.pos.z * scale - 2, 4, 4);
+  }
+  ctx.fillStyle = '#ff8a2a';
+  if (G.mission && G.mission.rivals) {
+    for (const r of G.mission.rivals) {
+      ctx.fillRect(C + r.pos.x * scale - 2, C + r.pos.z * scale - 2, 4, 4);
+    }
+  }
+  const px = C + G.player.pos.x * scale, pz = C + G.player.pos.z * scale;
+  ctx.fillStyle = '#3aff6a';
+  ctx.beginPath(); ctx.arc(px, pz, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#3aff6a';
+  ctx.beginPath();
+  ctx.moveTo(px, pz);
+  ctx.lineTo(px + Math.sin(G.player.heading) * 8, pz + Math.cos(G.player.heading) * 8);
+  ctx.stroke();
+  // North tick.
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillText('N', C - 3, 10);
+}
+
+export function showMessage(text, seconds = 3) {
+  G.message = text;
+  G.messageUntil = G.playTime + seconds;
+}
+
+export function showScreen(id) {
+  for (const s of ['screen-title', 'screen-pause', 'screen-busted', 'screen-wasted']) {
+    const el = document.getElementById(s);
+    if (el) el.style.display = s === id ? 'flex' : 'none';
+  }
+  const hud = document.getElementById('hud');
+  if (hud) hud.style.display = id ? 'none' : 'block';
 }

@@ -1,92 +1,77 @@
-// state.js — the single shared game state for SOLMAR HEAT.
-// Every module imports G and reads/mutates it; main.js builds the world into it.
-// Keeping one plain object avoids circular imports between game systems.
+// state.js — the single shared game state for NEON HARBOR.
+// Every module imports this one object (G) and reads/mutates its fields, so
+// the game loop, the HUD, the missions and the police all agree on one truth.
+// main.js fills it in at startup; save.js serialises the fields that persist.
 export const G = {
-  // --- lifecycle ---
-  mode: 'loading', // 'loading' | 'title' | 'playing' | 'paused' | 'busted' | 'wasted'
-  time: 0, // seconds since load
-  playTime: 0, // seconds of active play (drives the in-game clock)
-  paused: false,
-  muted: false,
-  photoMode: null, // null or { shot: 'title'|'drive'|'chase'|'mission', seed: number }
-  seed: 7,
-
-  // --- three.js handles (filled by main.js) ---
-  scene: null,
-  camera: null,
-  renderer: null,
-  sun: null,
-
-  // --- world ---
-  city: null, // { colliders, roads, blocks, spawn, safehouse, bank, marina, docks, hospital }
-  groundY: 0,
-
-  // --- player ---
-  player: null, // { mesh, pos, vel, heading, health, onFoot, inCar, speed, ... }
-  cameraYaw: 0,
-  cameraPitch: 0.32,
-  cameraMode: 0, // 0 near chase, 1 far chase, 2 top-down
-
-  // --- vehicles ---
-  cars: [], // all cars: { mesh, pos, heading, speed, color, isPlayer, isPolice, isTraffic, driver, health }
-  playerCar: null,
-  policeCars: [],
-  trafficCars: [],
-
-  // --- people ---
-  peds: [], // { mesh, pos, heading, speed, state, target, color }
-  cops: [], // on-foot police { mesh, pos, heading, speed, state }
-
-  // --- systems ---
-  wanted: 0, // 0..5 stars
-  wantedHeat: 0, // 0..100, decays when hidden; stars derive from it
+  mode: 'title', // 'title' | 'playing' | 'paused' | 'busted' | 'wasted'
+  seed: 1,
+  playTime: 0,
   cash: 0,
   health: 100,
   maxHealth: 100,
   ammo: 12,
-  maxAmmo: 12,
   reserveAmmo: 48,
   weapon: 'fists', // 'fists' | 'pistol'
-  kills: 0,
-  carsStolen: 0,
+  wanted: 0, // 0..5 stars
+  heat: 0, // 0..100, feeds the wanted level
+  day: 1,
+
+  player: null, // { pos: THREE.Vector3, heading, speed, inCar, mesh, ... }
+  playerCar: null, // the car object the player is driving, or null
+
+  cars: [], // all traffic + parked cars
+  peds: [], // pedestrians
+  policeCars: [], // police cars actively chasing
+  cops: [], // police officers on foot
+  pickups: [], // health / ammo / cash pickups in the world
+  bullets: [], // active tracer bullets
+  particles: [], // simple particle bursts
+
+  missionIndex: 0,
   missionsDone: 0,
+  mission: null, // current mission runtime state
+  missionTimer: 0,
+  carsStolen: 0,
+  pedsHit: 0,
+  shotsFired: 0,
 
-  // --- missions ---
-  mission: null, // active mission object { id, title, desc, stage, target, ... }
-  missionIndex: 0, // next mission to start (0..3), 4 = all done
-  missionMarker: null, // THREE.Mesh beacon at the current objective
+  // three.js handles, filled by main.js
+  scene: null,
+  camera: null,
+  renderer: null,
+  clock: null,
 
-  // --- pickups / collectibles ---
-  pickups: [], // { mesh, kind: 'cash'|'health'|'ammo', pos, taken }
+  // city data, filled by city.js
+  city: null, // { roads, blocks, buildings, landmarks, bounds }
+  nav: null, // road graph for traffic
 
-  // --- effects ---
-  shake: 0, // screen shake amount
-  flash: 0, // muzzle / damage flash timer
-  particles: [], // { mesh, vel, life }
-
-  // --- stats for save / pause screen ---
-  stats: { deaths: 0, busted: 0, shotsFired: 0, shotsHit: 0, distanceDriven: 0 },
+  muted: false,
+  message: '', // centre-screen toast text
+  messageUntil: 0,
 };
 
-// resetRunState restores the mutable run state for a fresh New Game
-// (keeps scene/camera/city handles, which main.js rebuilds separately).
 export function resetRunState() {
   G.mode = 'playing';
   G.playTime = 0;
-  G.wanted = 0;
-  G.wantedHeat = 0;
   G.cash = 0;
-  G.health = 100;
+  G.health = G.maxHealth;
   G.ammo = 12;
   G.reserveAmmo = 48;
   G.weapon = 'fists';
-  G.kills = 0;
-  G.carsStolen = 0;
+  G.wanted = 0;
+  G.heat = 0;
+  G.day = 1;
+  G.missionIndex = 0;
   G.missionsDone = 0;
   G.mission = null;
-  G.missionIndex = 0;
+  G.missionTimer = 0;
+  G.carsStolen = 0;
+  G.pedsHit = 0;
+  G.shotsFired = 0;
   G.playerCar = null;
-  G.shake = 0;
-  G.flash = 0;
-  G.stats = { deaths: 0, busted: 0, shotsFired: 0, shotsHit: 0, distanceDriven: 0 };
+  G.policeCars.length = 0;
+  G.cops.length = 0;
+  G.pickups.length = 0;
+  G.bullets.length = 0;
+  G.particles.length = 0;
 }

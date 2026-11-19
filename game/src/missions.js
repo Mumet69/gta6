@@ -1,219 +1,160 @@
-// missions.js — the SOLMAR HEAT story campaign: four jobs for the crew.
-// Each mission is a chain of stages with a target point in the city; reaching
-// it advances the stage. The manager owns the objective beacon, the rival
-// gang members for the combat mission, and the hold-to-grab timer at the bank.
-import * as THREE from 'three';
-import { dist2D, clamp } from './utils.js';
-import { makePersonMesh, animateWalk } from './people.js';
+// missions.js — the story: four jobs for Vera Kaine's crew.
+// Jax Moreno owes the crew $5,000. Each job pays cash and moves the story
+// forward; the last one is the big score — rob the Harbor Bank, then lose a
+// 3-star wanted level by reaching the safehouse. A mission has a target
+// marker in the world and on the minimap; standing in the marker completes a
+// step. Some missions have a timer.
+import { G } from './state.js';
+import { dist2d, moneyString } from './utils.js';
 
-// Mission data — all original: Rio Vega, the Solmar crew, the Vipers gang.
 export const MISSIONS = [
   {
-    id: 'first-gear', title: 'FIRST GEAR', reward: 500,
-    intro: 'Mara: "Rio, you are back. We need wheels. Steal any car and bring it to the Marina."',
-    stages: [
-      { title: 'FIRST GEAR', desc: 'Steal a car — walk up to one and press E.', target: null, needCar: true },
-      { title: 'FIRST GEAR', desc: 'Drive to the Marina Docks.', target: 'marina', radius: 10 },
+    id: 'first-gear',
+    title: 'FIRST GEAR',
+    brief: 'Vera needs a car. Steal any car and bring it to the garage at the safehouse.',
+    reward: 500,
+    steps: [
+      { text: 'Steal a car (press E near one)', check: (g) => g.player.inCar, onDone: 'Nice wheels. Now bring it to the safehouse garage.' },
+      { text: 'Deliver the car to the safehouse', marker: 'safehouse', radius: 10, onDone: 'First job done. Vera is impressed.' },
     ],
   },
   {
-    id: 'package-run', title: 'PACKAGE RUN', reward: 800,
-    intro: 'Mara: "Package at the safehouse. Hospital needs it in 100 seconds. No excuses."',
-    stages: [
-      { title: 'PACKAGE RUN', desc: 'Pick up the package at the safehouse.', target: 'safehouse', radius: 8 },
-      { title: 'PACKAGE RUN', desc: 'Deliver the package to Solmar General — fast!', target: 'hospital', radius: 10, timer: 100 },
+    id: 'harbour-run',
+    title: 'HARBOUR RUN',
+    brief: 'A package for the port, and the clock is ticking. Get it to the docks in 100 seconds.',
+    reward: 800,
+    timer: 100,
+    steps: [
+      { text: 'Get in a car', check: (g) => g.player.inCar, onDone: 'Drive! The port is east, by the beach.' },
+      { text: 'Deliver the package to the port', marker: 'port', radius: 12, onDone: 'Delivered with time to spare. Vera pays up.' },
     ],
   },
   {
-    id: 'street-sweep', title: 'STREET SWEEP', reward: 1200,
-    intro: 'Dante: "The Vipers took our corner at the docks. Take it back. All four of them."',
-    stages: [
-      { title: 'STREET SWEEP', desc: 'Go to the Marina Docks.', target: 'marina', radius: 14 },
-      { title: 'STREET SWEEP', desc: 'Take out all 4 Vipers. 0 / 4 down.', target: 'marina', radius: 30, kills: 4 },
+    id: 'dock-brawl',
+    title: 'DOCK BRAWL',
+    brief: 'A rival crew is shaking down the marina. Go there and knock out 4 of them. Fists or pistol — your call.',
+    reward: 1200,
+    steps: [
+      { text: 'Go to the marina', marker: 'marina', radius: 12, onDone: 'They are here. Take down 4 rivals!', spawnRivals: true },
+      { text: 'Knock out 4 rivals (0/4)', check: (g) => (g.mission.rivalsDown || 0) >= 4, onDone: 'The marina is ours again.' },
     ],
   },
   {
-    id: 'solmar-job', title: 'THE SOLMAR JOB', reward: 5000,
-    intro: 'Mara: "The big one. Solmar First Bank. Grab the cash, then lose the cops at the safehouse."',
-    stages: [
-      { title: 'THE SOLMAR JOB', desc: 'Get to Solmar First Bank.', target: 'bank', radius: 12 },
-      { title: 'THE SOLMAR JOB', desc: 'Hold position inside the bank to grab the cash.', target: 'bank', radius: 8, hold: 5 },
-      { title: 'THE SOLMAR JOB', desc: 'Escape to the safehouse — the whole PD is coming.', target: 'safehouse', radius: 10 },
+    id: 'big-score',
+    title: 'THE BIG SCORE',
+    brief: 'The Harbor Bank. Grab the cash, then lose the heat — reach the safehouse with no wanted stars.',
+    reward: 2500,
+    steps: [
+      { text: 'Go to the Harbor Bank', marker: 'bank', radius: 10, onDone: 'Grab the cash! (alarms going off)', giveCash: 2500, setWanted: 3 },
+      { text: 'Lose the heat: reach the safehouse with 0 stars', marker: 'safehouse', radius: 10, needWanted: 0, onDone: 'Clean getaway. The debt is paid — you are free.' },
     ],
   },
 ];
 
-export class MissionManager {
-  constructor(scene, landmarks) {
-    this.scene = scene;
-    this.landmarks = landmarks;
-    this.active = null; // { def, stage, timer, holdProgress, kills }
-    this.gang = []; // rival gang members for STREET SWEEP
-    this.beacon = new THREE.Mesh(
-      new THREE.CylinderGeometry(3, 3, 60, 12, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0xffb02e, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false }));
-    this.beacon.visible = false;
-    scene.add(this.beacon);
-    this.ring = new THREE.Mesh(
-      new THREE.RingGeometry(4, 5, 24),
-      new THREE.MeshBasicMaterial({ color: 0xffb02e, transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
-    this.ring.rotation.x = -Math.PI / 2;
-    this.ring.visible = false;
-    scene.add(this.ring);
+export function startMission(index) {
+  const def = MISSIONS[index];
+  if (!def) return false;
+  G.mission = {
+    def,
+    index,
+    step: 0,
+    timer: def.timer || 0,
+    rivalsDown: 0,
+    rivals: [],
+    failed: false,
+  };
+  G.missionTimer = def.timer || 0;
+  if (G.onMissionStart) G.onMissionStart(def);
+  return true;
+}
+
+export function currentStep() {
+  if (!G.mission) return null;
+  return G.mission.def.steps[G.mission.step] || null;
+}
+
+export function missionMarkerPos() {
+  const step = currentStep();
+  if (!step || !step.marker) return null;
+  const lm = G.city.landmarks[step.marker];
+  return lm ? { x: lm.pos.x, z: lm.pos.z, name: lm.name } : null;
+}
+
+export function updateMissions(dt) {
+  if (!G.mission || G.mode !== 'playing') return;
+  const m = G.mission;
+  const step = currentStep();
+  if (!step) {
+    completeMission();
+    return;
   }
-
-  start(index, ctx) {
-    const def = MISSIONS[index];
-    if (!def) return false;
-    this.active = { def, stage: 0, timer: 0, holdProgress: 0, kills: 0 };
-    ctx.onToast(def.intro);
-    ctx.onMissionStart(def);
-    return true;
-  }
-
-  currentStage() { return this.active ? this.active.def.stages[this.active.stage] : null; }
-
-  targetPos() {
-    const s = this.currentStage();
-    if (!s || !s.target) return null;
-    const lm = this.landmarks[s.target];
-    return lm ? { x: lm.x, z: lm.z } : null;
-  }
-
-  // called when a gang member is killed by the player
-  onGangKill(ctx) {
-    if (!this.active || this.active.def.id !== 'street-sweep') return;
-    const stage = this.currentStage();
-    if (!stage || !stage.kills) return;
-    this.active.kills++;
-    ctx.onToast(`Viper down — ${this.active.kills} / ${stage.kills}`);
-    if (this.active.kills >= stage.kills) this.advance(ctx);
-  }
-
-  advance(ctx) {
-    this.active.stage++;
-    if (this.active.stage >= this.active.def.stages.length) {
-      const def = this.active.def;
-      ctx.onCash(def.reward);
-      ctx.onMissionComplete(def);
-      this.active = null;
-      this.clearGang();
-      this.beacon.visible = false;
-      this.ring.visible = false;
+  // Timer missions.
+  if (m.def.timer) {
+    m.timer -= dt;
+    G.missionTimer = m.timer;
+    if (m.timer <= 0) {
+      failMission('Out of time.');
       return;
     }
-    const s = this.currentStage();
-    if (s.timer) this.active.timer = s.timer;
-    if (s.kills) this.spawnGang(ctx);
   }
+  // Step completion.
+  let done = false;
+  if (step.check) {
+    done = step.check(G);
+  } else if (step.marker) {
+    const lm = G.city.landmarks[step.marker];
+    if (lm) {
+      const d = dist2d(G.player.pos.x, G.player.pos.z, lm.pos.x, lm.pos.z);
+      const needWanted = step.needWanted;
+      done = d < step.radius && (needWanted === undefined || G.wanted === needWanted);
+    }
+  }
+  if (!done) return;
+  // Step effects.
+  if (step.giveCash) {
+    G.cash += step.giveCash;
+    if (G.onCash) G.onCash(step.giveCash, 'bank loot');
+  }
+  if (step.setWanted !== undefined && G.setWantedExternal) {
+    G.setWantedExternal(step.setWanted);
+  }
+  if (step.spawnRivals && G.spawnRivalsExternal) {
+    G.spawnRivalsExternal(4);
+  }
+  if (step.onDone && G.onMissionStep) G.onMissionStep(step.onDone);
+  m.step += 1;
+  if (m.step >= m.def.steps.length) completeMission();
+}
 
-  spawnGang(ctx) {
-    this.clearGang();
-    const m = this.landmarks.marina;
-    // Vipers hold the pier / open waterfront west of the marina block, never
-    // inside a building: x in [-184,-178], z in [138,168].
-    for (let i = 0; i < 4; i++) {
-      const mesh = makePersonMesh(0x8a1a2a, 0xe8b88a, false);
-      const x = m.x - 8 + (i % 2) * 6;
-      const z = m.z - 16 + i * 10;
-      mesh.position.set(x, 0, z);
-      this.scene.add(mesh);
-      this.gang.push({ mesh, pos: mesh.position, heading: 0, speed: 3.2, health: 2, walkPhase: i, attackCd: 0 });
-    }
-    ctx.onToast('The Vipers are here. Take them out!');
+function completeMission() {
+  const m = G.mission;
+  G.cash += m.def.reward;
+  G.missionsDone += 1;
+  G.missionIndex += 1;
+  if (G.onMissionComplete) G.onMissionComplete(m.def, m.def.reward);
+  G.mission = null;
+  G.missionTimer = 0;
+  // Chain the next mission after a short breather (main.js starts it).
+  if (G.missionIndex < MISSIONS.length && G.onMissionChain) {
+    G.onMissionChain(G.missionIndex);
   }
+}
 
-  clearGang() {
-    for (const g of this.gang) this.scene.remove(g.mesh);
-    this.gang = [];
-  }
+function failMission(why) {
+  const m = G.mission;
+  G.mission = null;
+  G.missionTimer = 0;
+  if (G.onMissionFail) G.onMissionFail(m.def, why);
+}
 
-  update(dt, ctx) {
-    // beacon + ring follow the current objective
-    const tp = this.targetPos();
-    if (tp && this.active) {
-      this.beacon.visible = true;
-      this.ring.visible = true;
-      this.beacon.position.set(tp.x, 30, tp.z);
-      this.ring.position.set(tp.x, 0.15, tp.z);
-      this.beacon.rotation.y += dt * 0.8;
-      const pulse = 0.22 + Math.sin(ctx.time * 3) * 0.08;
-      this.beacon.material.opacity = pulse;
-    } else {
-      this.beacon.visible = false;
-      this.ring.visible = false;
-    }
-    if (!this.active) return;
-    const s = this.currentStage();
-    const p = ctx.playerPos;
-    // stage timer (PACKAGE RUN delivery)
-    if (s.timer) {
-      this.active.timer -= dt;
-      if (this.active.timer <= 0) {
-        ctx.onToast('Too slow — the package run failed. Try again from the safehouse.');
-        ctx.onMissionFailed(this.active.def);
-        this.active = null;
-        this.clearGang();
-        return;
-      }
-    }
-    // need a car stage: complete once the player has a car or has stolen one
-    if (s.needCar) {
-      if (ctx.inCar || (ctx.carsStolen || 0) > 0) this.advance(ctx);
-      return;
-    }
-    if (!tp) return;
-    const d = dist2D(p.x, p.z, tp.x, tp.z);
-    // hold-to-grab stage (bank vault)
-    if (s.hold) {
-      if (d < s.radius) {
-        this.active.holdProgress += dt;
-        if (this.active.holdProgress >= s.hold) {
-          ctx.onToast('Cash grabbed! The alarms are screaming — RUN!');
-          ctx.onWanted(55); // jump to 3 stars
-          this.advance(ctx);
-        }
-      } else {
-        this.active.holdProgress = Math.max(0, this.active.holdProgress - dt);
-      }
-      return;
-    }
-    if (s.kills) return; // kills stage advances via onGangKill
-    if (d < (s.radius || 10)) this.advance(ctx);
+export function missionProgressText() {
+  const m = G.mission;
+  if (!m) return '';
+  const step = currentStep();
+  if (!step) return '';
+  let text = step.text;
+  if (m.def.id === 'dock-brawl' && m.step === 1) {
+    text = `Knock out 4 rivals (${m.rivalsDown || 0}/4)`;
   }
-
-  // gang members chase and punch the player
-  updateGang(dt, ctx) {
-    for (const g of this.gang) {
-      const p = ctx.playerPos;
-      const d = dist2D(g.pos.x, g.pos.z, p.x, p.z);
-      const want = Math.atan2(p.x - g.pos.x, p.z - g.pos.z);
-      g.heading += (want - g.heading) * Math.min(1, dt * 4);
-      if (d > 2) {
-        g.pos.x += Math.sin(g.heading) * g.speed * dt;
-        g.pos.z += Math.cos(g.heading) * g.speed * dt;
-        g.walkPhase += dt * g.speed * 2;
-      } else {
-        g.attackCd -= dt;
-        if (g.attackCd <= 0) {
-          g.attackCd = 1.1;
-          ctx.onDamage(8, 'Viper');
-        }
-      }
-      g.mesh.rotation.y = g.heading;
-      animateWalk(g.mesh, g.walkPhase, 0.6);
-    }
-  }
-
-  // damage a gang member (bullet or punch); returns true if killed
-  hitGang(g, dmg, ctx) {
-    g.health -= dmg;
-    if (g.health <= 0) {
-      this.scene.remove(g.mesh);
-      this.gang.splice(this.gang.indexOf(g), 1);
-      this.onGangKill(ctx);
-      return true;
-    }
-    return false;
-  }
+  return text;
 }

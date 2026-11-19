@@ -1,201 +1,137 @@
-// people.js — the player on foot and the pedestrians of Solmar City.
-// A person is a small articulated figure built from boxes (torso, head, legs,
-// arms) with a walk-cycle swing. Pedestrians stroll the sidewalks, flee from
-// gunfire and from the player's car, and sometimes scream (a toast + wanted).
+// people.js — pedestrians and police officers on foot.
+// Pedestrians stroll the sidewalks and flee from gunfire or speeding cars.
+// Cops on foot close in on the player and try to arrest them (busted) when
+// the wanted level is up; the player can fight them off.
 import * as THREE from 'three';
-import { clamp, angleLerp, dist2D, resolveAABBCollisions, pick, randRange } from './utils.js';
+import { G } from './state.js';
+import { makeRng, clamp, dist2d, TAU } from './utils.js';
+import { BLOCK, HALF } from './city.js';
 
-const SHIRT_COLORS = [0xd84a4a, 0x4a7ad8, 0xe8c860, 0x3aa86a, 0xd8d8d8, 0x8a4ad8, 0xe88a2a, 0x4ad8c8];
-const SKIN_COLORS = [0xe8b88a, 0xc98a5a, 0x8a5a3a, 0xf0c8a0];
+const SHIRT = [0xc23a3a, 0x3a6ac2, 0xd8b83a, 0x3a9a5a, 0xe8e8e8, 0x8a5a3a, 0x5a3a8a, 0x2a2a2a];
+const PANTS = [0x2a3a5a, 0x3a3a3a, 0x5a4a3a, 0x2a2a2a, 0x6a7a8a];
 
-export function makePersonMesh(shirt, skin, police = false) {
+export function makePersonMesh(shirt, pants, isCop) {
   const g = new THREE.Group();
-  const shirtMat = new THREE.MeshLambertMaterial({ color: police ? 0x2a4a8a : shirt });
-  const skinMat = new THREE.MeshLambertMaterial({ color: skin });
-  const pantsMat = new THREE.MeshLambertMaterial({ color: police ? 0x1a2430 : 0x3a3a44 });
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.7, 0.32), shirtMat);
-  torso.position.y = 1.05;
-  torso.castShadow = true;
-  g.add(torso);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.32), skinMat);
-  head.position.y = 1.62;
-  head.castShadow = true;
-  g.add(head);
-  if (police) {
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.1, 0.36),
-      new THREE.MeshLambertMaterial({ color: 0x1a2430 }));
-    cap.position.y = 1.82;
-    g.add(cap);
-  } else {
-    const hair = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.12, 0.34),
-      new THREE.MeshLambertMaterial({ color: 0x2a1a10 }));
-    hair.position.y = 1.8;
-    g.add(hair);
+  const legMat = new THREE.MeshLambertMaterial({ color: isCop ? 0x1a1a2a : pants });
+  const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.8, 0.22), legMat);
+  leftLeg.position.set(-0.14, 0.4, 0);
+  const rightLeg = leftLeg.clone();
+  rightLeg.position.x = 0.14;
+  const torsoMat = new THREE.MeshLambertMaterial({ color: isCop ? 0x1a2a4a : shirt });
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.75, 0.34), torsoMat);
+  torso.position.y = 1.18;
+  const skin = new THREE.MeshLambertMaterial({ color: 0xd8a878 });
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), skin);
+  head.position.y = 1.78;
+  const armMat = new THREE.MeshLambertMaterial({ color: isCop ? 0x1a2a4a : shirt });
+  const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.65, 0.16), armMat);
+  leftArm.position.set(-0.42, 1.18, 0);
+  const rightArm = leftArm.clone();
+  rightArm.position.x = 0.42;
+  if (isCop) {
+    const hat = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.14, 0.46), new THREE.MeshLambertMaterial({ color: 0x0a0a1a }));
+    hat.position.y = 2.02;
+    g.add(hat);
   }
-  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.22), pantsMat);
-  legL.position.set(-0.14, 0.35, 0);
-  g.add(legL);
-  const legR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.22), pantsMat);
-  legR.position.set(0.14, 0.35, 0);
-  g.add(legR);
-  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.6, 0.18), shirtMat);
-  armL.position.set(-0.37, 1.05, 0);
-  g.add(armL);
-  const armR = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.6, 0.18), shirtMat);
-  armR.position.set(0.37, 1.05, 0);
-  g.add(armR);
-  g.userData = { legL, legR, armL, armR, torso, head };
+  g.add(leftLeg, rightLeg, torso, head, leftArm, rightArm);
+  g.userData.parts = { leftLeg, rightLeg, leftArm, rightArm };
   return g;
 }
 
-// walk-cycle: swing limbs by phase; phase advances with speed.
-export function animateWalk(mesh, phase, amount) {
-  const u = mesh.userData;
-  const s = Math.sin(phase) * amount;
-  u.legL.rotation.x = s;
-  u.legR.rotation.x = -s;
-  u.armL.rotation.x = -s * 0.8;
-  u.armR.rotation.x = s * 0.8;
+export function spawnPeds(scene, seed, count) {
+  const rng = makeRng(seed + 31);
+  const peds = [];
+  for (let i = 0; i < count; i++) {
+    const x = rng.range(-HALF * BLOCK, HALF * BLOCK);
+    const z = rng.range(-HALF * BLOCK, HALF * BLOCK);
+    const mesh = makePersonMesh(rng.pick(SHIRT), rng.pick(PANTS), false);
+    mesh.position.set(x, 0, z);
+    mesh.rotation.y = rng.range(0, TAU);
+    scene.add(mesh);
+    peds.push({
+      mesh, pos: mesh.position,
+      heading: mesh.rotation.y,
+      speed: rng.range(1.2, 2.4),
+      walkPhase: rng.range(0, TAU),
+      flee: 0, // seconds of fleeing left
+      target: null,
+    });
+  }
+  return peds;
 }
 
-// Player — on-foot movement, jump, and entering/exiting cars.
-export class Player {
-  constructor(scene, x, z, heading) {
-    this.mesh = makePersonMesh(0xd84a4a, 0xe8b88a, false);
-    this.mesh.position.set(x, 0, z);
-    this.mesh.rotation.y = heading;
-    scene.add(this.mesh);
-    this.pos = this.mesh.position;
-    this.heading = heading;
-    this.velY = 0;
-    this.grounded = true;
-    this.walkPhase = 0;
-    this.speed = 0;
-    this.inCar = false;
-    this.punchTimer = 0;
-  }
+export function spawnCop(scene, pos) {
+  const mesh = makePersonMesh(0, 0, true);
+  mesh.position.set(pos.x, 0, pos.z);
+  scene.add(mesh);
+  const cop = {
+    mesh, pos: mesh.position,
+    heading: 0, speed: 4.2, walkPhase: 0,
+    state: 'chase',
+  };
+  return cop;
+}
 
-  update(dt, input, cameraYaw, colliders) {
-    if (this.inCar) { this.mesh.visible = false; return; }
-    this.mesh.visible = true;
-    const mx = input.moveX(), my = input.moveY();
-    const sprint = input.sprint();
-    const speed = sprint ? 9 : 5.2;
-    // movement is relative to the camera yaw
-    const sin = Math.sin(cameraYaw), cos = Math.cos(cameraYaw);
-    let dx = (sin * my + cos * mx);
-    let dz = (cos * my - sin * mx);
-    const len = Math.hypot(dx, dz);
-    if (len > 0.01) {
-      dx /= len; dz /= len;
-      this.heading = angleLerp(this.heading, Math.atan2(dx, dz), Math.min(1, dt * 12));
-      const nx = this.pos.x + dx * speed * dt;
-      const nz = this.pos.z + dz * speed * dt;
-      const res = resolveAABBCollisions(nx, nz, 0.5, colliders);
-      this.pos.x = clamp(res.x, -196, 196);
-      this.pos.z = clamp(res.z, -196, 196);
-      this.speed = speed;
-      this.walkPhase += dt * speed * 1.6;
+function pickPedTarget(ped, rng) {
+  ped.target = {
+    x: clamp(ped.pos.x + rng.range(-40, 40), -HALF * BLOCK, HALF * BLOCK),
+    z: clamp(ped.pos.z + rng.range(-40, 40), -HALF * BLOCK, HALF * BLOCK),
+  };
+}
+
+export function updatePeds(peds, rng, dt, dangerPos) {
+  for (const ped of peds) {
+    // Flee if danger (gunfire / speeding car) is near.
+    if (dangerPos && dist2d(ped.pos.x, ped.pos.z, dangerPos.x, dangerPos.z) < 14) {
+      ped.flee = 2.5;
+    }
+    let speed = ped.speed;
+    let heading = ped.heading;
+    if (ped.flee > 0) {
+      ped.flee -= dt;
+      speed = 5.5;
+      if (dangerPos) heading = Math.atan2(ped.pos.x - dangerPos.x, ped.pos.z - dangerPos.z);
     } else {
-      this.speed = 0;
+      if (!ped.target || dist2d(ped.pos.x, ped.pos.z, ped.target.x, ped.target.z) < 2) {
+        pickPedTarget(ped, rng);
+      }
+      heading = Math.atan2(ped.target.x - ped.pos.x, ped.target.z - ped.pos.z);
     }
-    // jump (simple gravity)
-    if (input.jump() && this.grounded) { this.velY = 6.5; this.grounded = false; }
-    if (!this.grounded) {
-      this.velY -= 18 * dt;
-      this.pos.y += this.velY * dt;
-      if (this.pos.y <= 0) { this.pos.y = 0; this.velY = 0; this.grounded = true; }
-    }
-    this.mesh.rotation.y = this.heading;
-    animateWalk(this.mesh, this.walkPhase, this.speed > 0.1 ? 0.7 : 0);
-    if (this.punchTimer > 0) {
-      this.punchTimer -= dt;
-      this.mesh.userData.armR.rotation.x = -1.4 * Math.max(0, this.punchTimer / 0.25);
-    }
+    ped.heading = heading;
+    ped.pos.x += Math.sin(heading) * speed * dt;
+    ped.pos.z += Math.cos(heading) * speed * dt;
+    ped.pos.x = clamp(ped.pos.x, -HALF * BLOCK - 6, HALF * BLOCK + 6);
+    ped.pos.z = clamp(ped.pos.z, -HALF * BLOCK - 6, HALF * BLOCK + 6);
+    ped.mesh.rotation.y = heading;
+    ped.walkPhase += dt * speed * 3.2;
+    const swing = Math.sin(ped.walkPhase) * 0.55;
+    const p = ped.mesh.userData.parts;
+    p.leftLeg.rotation.x = swing;
+    p.rightLeg.rotation.x = -swing;
+    p.leftArm.rotation.x = -swing * 0.7;
+    p.rightArm.rotation.x = swing * 0.7;
   }
 }
 
-// PedestrianManager — sidewalk walkers with panic behaviour.
-export class PedestrianManager {
-  constructor(scene, rng, colliders) {
-    this.scene = scene;
-    this.rng = rng;
-    this.colliders = colliders;
-    this.peds = [];
-  }
-
-  spawn(count, centerX = 0, centerZ = 0) {
-    for (let i = 0; i < count; i++) {
-      const x = centerX + (this.rng() * 2 - 1) * 170;
-      const z = centerZ + (this.rng() * 2 - 1) * 170;
-      const mesh = makePersonMesh(
-        SHIRT_COLORS[Math.floor(this.rng() * SHIRT_COLORS.length)],
-        SKIN_COLORS[Math.floor(this.rng() * SKIN_COLORS.length)]);
-      mesh.position.set(x, 0, z);
-      this.scene.add(mesh);
-      this.peds.push({
-        mesh, pos: mesh.position,
-        heading: this.rng() * Math.PI * 2,
-        speed: 1 + this.rng() * 1.2,
-        state: 'walk', // 'walk' | 'flee' | 'down'
-        walkPhase: this.rng() * 6,
-        downTimer: 0,
-        targetX: x, targetZ: z,
-      });
+export function updateCops(cops, dt, playerPos, onBusted) {
+  for (const cop of G.cops) {
+    const d = dist2d(cop.pos.x, cop.pos.z, playerPos.x, playerPos.z);
+    if (d < 1.6) {
+      onBusted();
+      return;
     }
-  }
-
-  update(dt, playerPos, dangerPos, dangerRadius) {
-    for (const p of this.peds) {
-      if (p.state === 'down') {
-        p.downTimer -= dt;
-        if (p.downTimer <= 0) { p.state = 'walk'; p.mesh.rotation.x = 0; p.mesh.position.y = 0; }
-        continue;
-      }
-      const dDanger = dangerPos ? dist2D(p.pos.x, p.pos.z, dangerPos.x, dangerPos.z) : 999;
-      if (dDanger < dangerRadius) p.state = 'flee';
-      else if (p.state === 'flee' && dDanger > dangerRadius * 2.5) p.state = 'walk';
-      const speed = p.state === 'flee' ? 6.5 : p.speed;
-      if (p.state === 'walk' && dist2D(p.pos.x, p.pos.z, p.targetX, p.targetZ) < 2) {
-        p.targetX = p.pos.x + (this.rng() * 2 - 1) * 60;
-        p.targetZ = p.pos.z + (this.rng() * 2 - 1) * 60;
-        p.targetX = clamp(p.targetX, -190, 190);
-        p.targetZ = clamp(p.targetZ, -190, 190);
-      }
-      let tx, tz;
-      if (p.state === 'flee' && dangerPos) {
-        tx = p.pos.x + (p.pos.x - dangerPos.x);
-        tz = p.pos.z + (p.pos.z - dangerPos.z);
-      } else { tx = p.targetX; tz = p.targetZ; }
-      const want = Math.atan2(tx - p.pos.x, tz - p.pos.z);
-      p.heading = angleLerp(p.heading, want, Math.min(1, dt * 4));
-      const nx = p.pos.x + Math.sin(p.heading) * speed * dt;
-      const nz = p.pos.z + Math.cos(p.heading) * speed * dt;
-      const res = resolveAABBCollisions(nx, nz, 0.4, this.colliders);
-      p.pos.x = clamp(res.x, -196, 196);
-      p.pos.z = clamp(res.z, -196, 196);
-      p.walkPhase += dt * speed * 2.2;
-      p.mesh.rotation.y = p.heading;
-      animateWalk(p.mesh, p.walkPhase, speed > 0.1 ? 0.6 : 0);
-    }
-  }
-
-  // knock a pedestrian down (car hit or punch): returns the ped
-  knockDown(p) {
-    p.state = 'down';
-    p.downTimer = 6;
-    p.mesh.rotation.x = -Math.PI / 2;
-    p.mesh.position.y = 0.35;
-    return p;
-  }
-
-  nearest(x, z, maxDist) {
-    let best = null, bd = maxDist;
-    for (const p of this.peds) {
-      if (p.state === 'down') continue;
-      const d = dist2D(x, z, p.pos.x, p.pos.z);
-      if (d < bd) { bd = d; best = p; }
-    }
-    return best;
+    const heading = Math.atan2(playerPos.x - cop.pos.x, playerPos.z - cop.pos.z);
+    cop.heading = heading;
+    const speed = d > 12 ? 5.2 : 4.2;
+    cop.pos.x += Math.sin(heading) * speed * dt;
+    cop.pos.z += Math.cos(heading) * speed * dt;
+    cop.mesh.rotation.y = heading;
+    cop.walkPhase += dt * speed * 3;
+    const swing = Math.sin(cop.walkPhase) * 0.6;
+    const p = cop.mesh.userData.parts;
+    p.leftLeg.rotation.x = swing;
+    p.rightLeg.rotation.x = -swing;
+    p.leftArm.rotation.x = -swing * 0.7;
+    p.rightArm.rotation.x = swing * 0.7;
   }
 }

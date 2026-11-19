@@ -1,82 +1,100 @@
-// wanted.js — the Solmar PD response.
-// Crimes add heat (0..100); stars are bands of heat. While any cop is near,
-// heat holds; when the player is hidden and far from cops, heat decays and
-// stars fall. On-foot cops chase and try to arrest; getting caught on foot
-// at 1+ stars, or hitting 0 health, ends the run as BUSTED / WASTED.
-import * as THREE from 'three';
-import { clamp, dist2D, angleLerp } from './utils.js';
-import { makePersonMesh, animateWalk } from './people.js';
+// wanted.js — the wanted system: heat from crimes, stars, police response.
+// Crimes add heat; heat maps to 0–5 stars. Police cars spawn up to a cap that
+// grows with the wanted level and chase the player; foot cops join at 2+
+// stars. Heat decays when the player lays low, and stars fall with it.
+import { G } from './state.js';
+import { clamp } from './utils.js';
+import { spawnCar } from './vehicles.js';
+import { spawnCop } from './people.js';
+import { makeRng } from './utils.js';
 
-export class WantedSystem {
-  constructor(scene, rng) {
-    this.scene = scene;
-    this.rng = rng;
-    this.heat = 0;
-    this.stars = 0;
-    this.cops = []; // on-foot police
-    this.bustTimer = 0; // counts up while a cop is touching the player
-    this.hiddenTimer = 0;
+const HEAT_PER_STAR = 20;
+const POLICE_CAP = [0, 1, 2, 3, 4, 5];
+
+export function addHeat(n, reason) {
+  G.heat = clamp(G.heat + n, 0, 100);
+  const stars = Math.min(5, Math.floor(G.heat / HEAT_PER_STAR));
+  if (stars > G.wanted) {
+    G.wanted = stars;
+    if (G.onWantedUp) G.onWantedUp(stars, reason);
   }
+}
 
-  addHeat(amount) {
-    this.heat = clamp(this.heat + amount, 0, 100);
-    this.stars = this.heat <= 0 ? 0 : this.heat < 20 ? 1 : this.heat < 40 ? 2 : this.heat < 60 ? 3 : this.heat < 80 ? 4 : 5;
+export function setWanted(stars) {
+  G.wanted = clamp(stars, 0, 5);
+  G.heat = G.wanted * HEAT_PER_STAR + 5;
+}
+
+export function wantedLabel() {
+  return '★'.repeat(G.wanted) + '☆'.repeat(5 - G.wanted);
+}
+
+export function updateWanted(dt, rng) {
+  // Decay: laying low (no new crimes) cools the heat down.
+  if (G.heat > 0) {
+    const hidden = G.playerCar ? 0.55 : 0.8; // harder to lose them in a car
+    G.heat = Math.max(0, G.heat - dt * hidden * 1.4);
+    const stars = Math.min(5, Math.floor(G.heat / HEAT_PER_STAR));
+    if (stars < G.wanted) G.wanted = stars;
   }
-
-  clear() {
-    this.heat = 0;
-    this.stars = 0;
-    this.bustTimer = 0;
-    for (const c of this.cops) this.scene.remove(c.mesh);
-    this.cops = [];
+  // Police cars: keep the chase force at the cap for the current stars.
+  const cap = POLICE_CAP[G.wanted];
+  while (G.policeCars.length < cap) {
+    const angle = rng.range(0, Math.PI * 2);
+    const dist = 55 + rng.range(0, 30);
+    const px = G.player.pos.x + Math.sin(angle) * dist;
+    const pz = G.player.pos.z + Math.cos(angle) * dist;
+    const car = spawnCar(G.scene, rng, { police: true, pos: { x: px, z: pz } });
+    car.speed = 12;
+    G.policeCars.push(car);
+    G.cars.push(car);
   }
-
-  wantCops() {
-    return this.stars <= 0 ? 0 : this.stars <= 1 ? 1 : this.stars <= 2 ? 2 : this.stars <= 3 ? 3 : 4;
+  // Foot cops join the hunt at 2+ stars (max 3).
+  if (G.wanted >= 2 && G.cops.length < Math.min(3, G.wanted - 1)) {
+    const angle = rng.range(0, Math.PI * 2);
+    const cop = spawnCop(G.scene, {
+      x: G.player.pos.x + Math.sin(angle) * 18,
+      z: G.player.pos.z + Math.cos(angle) * 18,
+    });
+    G.cops.push(cop);
   }
+  // When the wanted level falls, excess police give up and drive off.
+  while (G.policeCars.length > cap) {
+    const car = G.policeCars.pop();
+    const ci = G.cars.indexOf(car);
+    if (ci >= 0) G.cars.splice(ci, 1);
+    G.scene.remove(car.mesh);
+  }
+  if (G.wanted < 2) {
+    while (G.cops.length > 0) {
+      const cop = G.cops.pop();
+      G.scene.remove(cop.mesh);
+    }
+  }
+}
 
-  update(dt, playerPos, playerInCar, onBusted) {
-    // spawn / despawn on-foot cops by wanted level
-    const want = this.wantCops();
-    while (this.cops.length < want) {
-      const a = this.rng() * Math.PI * 2;
-      const mesh = makePersonMesh(0x2a4a8a, 0xe8b88a, true);
-      const x = clamp(playerPos.x + Math.sin(a) * 40, -190, 190);
-      const z = clamp(playerPos.z + Math.cos(a) * 40, -190, 190);
-      mesh.position.set(x, 0, z);
-      this.scene.add(mesh);
-      this.cops.push({ mesh, pos: mesh.position, heading: 0, speed: 5.5, walkPhase: 0 });
-    }
-    while (this.cops.length > want) {
-      const c = this.cops.pop();
-      this.scene.remove(c.mesh);
-    }
-    let nearestCop = 999;
-    for (const c of this.cops) {
-      const d = dist2D(c.pos.x, c.pos.z, playerPos.x, playerPos.z);
-      nearestCop = Math.min(nearestCop, d);
-      const wantHeading = Math.atan2(playerPos.x - c.pos.x, playerPos.z - c.pos.z);
-      c.heading = angleLerp(c.heading, wantHeading, Math.min(1, dt * 5));
-      const speed = d > 25 ? 7 : 5.5;
-      c.pos.x += Math.sin(c.heading) * speed * dt;
-      c.pos.z += Math.cos(c.heading) * speed * dt;
-      c.walkPhase += dt * speed * 2;
-      c.mesh.rotation.y = c.heading;
-      animateWalk(c.mesh, c.walkPhase, 0.6);
-    }
-    // bust: a cop touching the player on foot
-    if (!playerInCar && nearestCop < 1.6 && this.stars > 0) {
-      this.bustTimer += dt;
-      if (this.bustTimer > 1.2) { this.bustTimer = 0; onBusted('busted'); }
-    } else {
-      this.bustTimer = Math.max(0, this.bustTimer - dt * 2);
-    }
-    // heat decay when hidden: no cop within 30 units
-    if (nearestCop > 30 && this.stars > 0) {
-      this.hiddenTimer += dt;
-      if (this.hiddenTimer > 4) this.addHeat(-6 * dt);
-    } else {
-      this.hiddenTimer = 0;
+// Police car chase: steer toward the player, ram speed, siren flash.
+export function updatePoliceChase(dt) {
+  for (const car of G.policeCars) {
+    const dx = G.player.pos.x - car.pos.x;
+    const dz = G.player.pos.z - car.pos.z;
+    const d = Math.hypot(dx, dz);
+    const want = Math.atan2(dx, dz);
+    let diff = want - car.heading;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    car.heading += clamp(diff, -2.4 * dt, 2.4 * dt);
+    const targetSpeed = d > 30 ? car.maxSpeed : car.maxSpeed * 0.8;
+    car.speed += clamp(targetSpeed - car.speed, -10 * dt, 12 * dt);
+    car.pos.x += Math.sin(car.heading) * car.speed * dt;
+    car.pos.z += Math.cos(car.heading) * car.speed * dt;
+    car.mesh.rotation.y = car.heading;
+    car.siren += dt;
+    // Ram the player: a hard hit hurts and adds a jolt.
+    if (d < 3.2 && G.player.inCar) {
+      if (G.onRam) G.onRam(car);
+    } else if (d < 2.2 && !G.player.inCar) {
+      if (G.onRam) G.onRam(car);
     }
   }
 }

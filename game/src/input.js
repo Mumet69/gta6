@@ -1,70 +1,59 @@
-// input.js — keyboard + mouse for SOLMAR HEAT.
-// WASD move/drive, Shift sprint, E enter/exit car, Space jump, mouse look
-// (pointer lock on canvas click, drag fallback), click shoot, F punch, R reload.
-export class Input {
-  constructor(canvas) {
-    this.canvas = canvas;
-    this.keys = {};
-    this.mouseDX = 0;
-    this.mouseDY = 0;
-    this.mouseDown = false;
-    this.mouseClicked = false;
-    this.locked = false;
-    this.onKey = null; // callback(code) for edge-triggered keys (E, F, R, P, M, C)
+// input.js — keyboard + mouse, with pointer lock for looking around.
+// WASD move/drive, Shift sprint, Space jump, E enter/exit/steal car,
+// F punch, 2 pistol / 1 fists, R reload, P pause, M mute, C camera,
+// click to shoot, mouse to look.
+export const keys = {};
+let lookX = 0, lookY = 0;
+let onMouseDown = null;
+let onKey = null;
 
-    window.addEventListener('keydown', (e) => {
-      if (e.repeat) return;
-      this.keys[e.code] = true;
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
-      if (this.onKey) this.onKey(e.code);
-    });
-    window.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
-    window.addEventListener('blur', () => { this.keys = {}; this.mouseDown = false; });
+export function initInput(callbacks) {
+  onMouseDown = callbacks.onMouseDown || null;
+  onKey = callbacks.onKey || null;
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    keys[e.code] = true;
+    if (onKey) onKey(e.code, true);
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+      e.preventDefault();
+    }
+  });
+  window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+  window.addEventListener('blur', () => {
+    for (const k of Object.keys(keys)) keys[k] = false;
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (document.pointerLockElement) {
+      lookX += e.movementX * 0.0028;
+      lookY += e.movementY * 0.0022;
+      lookY = Math.max(-0.9, Math.min(0.9, lookY));
+    }
+  });
+  document.addEventListener('mousedown', (e) => {
+    if (e.button === 0 && onMouseDown) onMouseDown(e.clientX, e.clientY);
+  });
+}
 
-    canvas.addEventListener('mousedown', (e) => {
-      this.mouseDown = true;
-      this.mouseClicked = true;
-      if (!this.locked) canvas.requestPointerLock?.();
-    });
-    window.addEventListener('mouseup', () => { this.mouseDown = false; });
-    document.addEventListener('pointerlockchange', () => {
-      this.locked = document.pointerLockElement === canvas;
-    });
-    document.addEventListener('mousemove', (e) => {
-      if (this.locked) { this.mouseDX += e.movementX; this.mouseDY += e.movementY; }
-      else if (this.mouseDown) { this.mouseDX += e.movementX || 0; this.mouseDY += e.movementY || 0; }
-    });
-    // prevent the context menu from popping over the game
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-  }
+export function getLook() { return { x: lookX, y: lookY }; }
+// Consume the accumulated mouse delta (returns it and resets to zero).
+export function consumeLook() {
+  const d = { x: lookX, y: lookY };
+  lookX = 0; lookY = 0;
+  return d;
+}
+export function resetLook() { lookX = 0; lookY = 0; }
 
-  down(code) { return !!this.keys[code]; }
+export function readMoveInput() {
+  return {
+    up: !!(keys['KeyW'] || keys['ArrowUp']),
+    down: !!(keys['KeyS'] || keys['ArrowDown']),
+    left: !!(keys['KeyA'] || keys['ArrowLeft']),
+    right: !!(keys['KeyD'] || keys['ArrowRight']),
+    sprint: !!(keys['ShiftLeft'] || keys['ShiftRight']),
+    jump: !!keys['Space'],
+  };
+}
 
-  // axes in [-1, 1]
-  moveX() {
-    let x = 0;
-    if (this.down('KeyA') || this.down('ArrowLeft')) x -= 1;
-    if (this.down('KeyD') || this.down('ArrowRight')) x += 1;
-    return x;
-  }
-  moveY() {
-    let y = 0;
-    if (this.down('KeyW') || this.down('ArrowUp')) y += 1;
-    if (this.down('KeyS') || this.down('ArrowDown')) y -= 1;
-    return y;
-  }
-  sprint() { return this.down('ShiftLeft') || this.down('ShiftRight'); }
-  jump() { return this.down('Space'); }
-
-  // consume the accumulated mouse delta for this frame
-  consumeMouse() {
-    const dx = this.mouseDX, dy = this.mouseDY;
-    this.mouseDX = 0; this.mouseDY = 0;
-    return { dx, dy };
-  }
-  consumeClick() {
-    const c = this.mouseClicked;
-    this.mouseClicked = false;
-    return c;
-  }
+export function lockPointer(el) {
+  if (el && el.requestPointerLock) el.requestPointerLock();
 }
