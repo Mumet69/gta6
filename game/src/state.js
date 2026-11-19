@@ -1,77 +1,92 @@
-// state.js — the single shared game state for NEON HARBOR.
-// Every module imports this one object (G) and reads/mutates its fields, so
-// the game loop, the HUD, the missions and the police all agree on one truth.
-// main.js fills it in at startup; save.js serialises the fields that persist.
-export const G = {
-  mode: 'title', // 'title' | 'playing' | 'paused' | 'busted' | 'wasted'
-  seed: 1,
-  playTime: 0,
-  cash: 0,
-  health: 100,
-  maxHealth: 100,
-  ammo: 12,
-  reserveAmmo: 48,
-  weapon: 'fists', // 'fists' | 'pistol'
-  wanted: 0, // 0..5 stars
-  heat: 0, // 0..100, feeds the wanted level
+// state.js — DUSTLINE: the single shared game state. Plain data, no imports,
+// so every system reads and writes the same truth without import cycles.
+
+export const S = {
+  // run / flow
+  started: false,      // past the title screen
+  paused: false,
+  busted: false,
+  wasted: false,
+  over: false,         // busted or wasted, waiting for restart
+  time: 0,             // seconds since the run started
   day: 1,
+  hour: 8,             // in-game clock, 08:00 start
+  minute: 0,
+  seed: 1,
 
-  player: null, // { pos: THREE.Vector3, heading, speed, inCar, mesh, ... }
-  playerCar: null, // the car object the player is driving, or null
+  // player
+  health: 100,
+  cash: 0,
+  weapon: 'fists',     // 'fists' | 'pistol'
+  ammo: 0,             // pistol reserve (magazine is infinite-ish: 12 per load)
+  mag: 0,              // pistol rounds in the magazine
+  onFoot: true,
+  car: null,           // the vehicle object the player drives, or null
+  px: 0, pz: 0,        // player position (feet) when on foot
+  heading: 0,          // facing angle, radians
+  walkSpeed: 0,
+  punchCooldown: 0,
+  shootCooldown: 0,
 
-  cars: [], // all traffic + parked cars
-  peds: [], // pedestrians
-  policeCars: [], // police cars actively chasing
-  cops: [], // police officers on foot
-  pickups: [], // health / ammo / cash pickups in the world
-  bullets: [], // active tracer bullets
-  particles: [], // simple particle bursts
+  // wanted
+  wanted: 0,           // stars 0..5
+  heat: 0,             // 0..100, drives star changes
+  heatDecay: 0,        // timer for passive decay
+  lastCrime: 0,        // game time of the last crime
 
-  missionIndex: 0,
-  missionsDone: 0,
-  mission: null, // current mission runtime state
-  missionTimer: 0,
-  carsStolen: 0,
-  pedsHit: 0,
-  shotsFired: 0,
+  // missions
+  mission: 0,          // index of the current mission
+  missionState: 'idle',// 'idle' | 'active' | 'done' | 'failed'
+  missionTimer: 0,     // seconds left for timed missions (0 = untimed)
+  objective: 'Press ENTER to start',
+  message: '',
+  messageTimer: 0,
 
-  // three.js handles, filled by main.js
-  scene: null,
-  camera: null,
-  renderer: null,
-  clock: null,
-
-  // city data, filled by city.js
-  city: null, // { roads, blocks, buildings, landmarks, bounds }
-  nav: null, // road graph for traffic
-
-  muted: false,
-  message: '', // centre-screen toast text
-  messageUntil: 0,
+  // stats (shown on the end screen)
+  stats: { crimes: 0, carsStolen: 0, pedsDown: 0, copsDown: 0, missionsDone: 0, distance: 0 },
 };
 
-export function resetRunState() {
-  G.mode = 'playing';
-  G.playTime = 0;
-  G.cash = 0;
-  G.health = G.maxHealth;
-  G.ammo = 12;
-  G.reserveAmmo = 48;
-  G.weapon = 'fists';
-  G.wanted = 0;
-  G.heat = 0;
-  G.day = 1;
-  G.missionIndex = 0;
-  G.missionsDone = 0;
-  G.mission = null;
-  G.missionTimer = 0;
-  G.carsStolen = 0;
-  G.pedsHit = 0;
-  G.shotsFired = 0;
-  G.playerCar = null;
-  G.policeCars.length = 0;
-  G.cops.length = 0;
-  G.pickups.length = 0;
-  G.bullets.length = 0;
-  G.particles.length = 0;
+export function resetState(seed) {
+  S.started = false;
+  S.paused = false;
+  S.busted = false;
+  S.wasted = false;
+  S.over = false;
+  S.time = 0;
+  S.day = 1;
+  S.hour = 8;
+  S.minute = 0;
+  S.seed = seed || 1;
+  S.health = 100;
+  S.cash = 0;
+  S.weapon = 'fists';
+  S.ammo = 0;
+  S.mag = 0;
+  S.onFoot = true;
+  S.car = null;
+  S.px = 0; S.pz = 0;
+  S.heading = 0;
+  S.walkSpeed = 0;
+  S.punchCooldown = 0;
+  S.shootCooldown = 0;
+  S.wanted = 0;
+  S.heat = 0;
+  S.heatDecay = 0;
+  S.lastCrime = 0;
+  S.mission = 0;
+  S.missionState = 'idle';
+  S.missionTimer = 0;
+  S.objective = 'Press ENTER to start';
+  S.message = '';
+  S.messageTimer = 0;
+  S.stats = { crimes: 0, carsStolen: 0, pedsDown: 0, copsDown: 0, missionsDone: 0, distance: 0 };
+}
+
+export function showMessage(text, seconds) {
+  S.message = text;
+  S.messageTimer = seconds || 3;
+}
+
+export function setObjective(text) {
+  S.objective = text;
 }

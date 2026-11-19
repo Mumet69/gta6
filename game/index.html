@@ -3,111 +3,91 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NEON HARBOR — an open-world crime game</title>
+<title>DUSTLINE — an open-world crime game</title>
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0a0e14; font-family: 'Segoe UI', Arial, sans-serif; color: #fff; }
-  #game { position: fixed; inset: 0; }
-  #game canvas { display: block; }
-  #hud { display: none; position: fixed; inset: 0; pointer-events: none; z-index: 5; }
-  .hud-top-left { position: absolute; top: 14px; left: 14px; }
-  .hud-top-right { position: absolute; top: 14px; right: 14px; text-align: right; }
-  .hud-bottom-right { position: absolute; bottom: 14px; right: 14px; text-align: right; }
-  .hud-bottom-left { position: absolute; bottom: 14px; left: 14px; }
-  #hud-health-bar { width: 220px; height: 16px; background: rgba(0,0,0,.55); border: 1px solid #fff3; border-radius: 3px; overflow: hidden; }
-  #hud-health-fill { height: 100%; width: 100%; background: #3a9a5a; }
-  #hud-health-text { font-size: 12px; text-shadow: 0 1px 2px #000; }
-  #hud-cash { font-size: 26px; font-weight: 700; color: #7dff9a; text-shadow: 0 2px 3px #000; }
-  #hud-stars { font-size: 26px; letter-spacing: 2px; text-shadow: 0 2px 3px #000; }
-  #hud-clock, #hud-day { font-size: 15px; text-shadow: 0 1px 2px #000; }
-  #hud-objective-title { font-size: 15px; font-weight: 700; color: #ffe93a; text-shadow: 0 1px 2px #000; }
-  #hud-objective { font-size: 14px; max-width: 320px; text-shadow: 0 1px 2px #000; }
-  #hud-speed { font-size: 30px; font-weight: 700; text-shadow: 0 2px 3px #000; }
-  #hud-weapon { font-size: 15px; text-shadow: 0 1px 2px #000; }
-  #hud-ammo { font-size: 14px; color: #ffd83a; text-shadow: 0 1px 2px #000; }
-  #hud-timer { font-size: 26px; font-weight: 700; color: #ff8a3a; text-shadow: 0 2px 3px #000; }
-  #hud-message { position: absolute; top: 18%; left: 50%; transform: translateX(-50%); font-size: 22px; font-weight: 700; color: #fff; text-shadow: 0 2px 4px #000; opacity: 0; transition: opacity .3s; text-align: center; max-width: 640px; }
-  #minimap { width: 150px; height: 150px; border: 2px solid rgba(255,255,255,.5); border-radius: 50%; background: #12202a; }
-  .screen { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 10; background: linear-gradient(160deg, #0a1626 0%, #123a5a 55%, #7a2a4a 100%); text-align: center; padding: 20px; }
-  .screen h1 { font-size: 64px; margin: 0; letter-spacing: 4px; color: #ffe93a; text-shadow: 0 4px 0 #c23a6a, 0 8px 24px #000; }
-  .screen h2 { font-size: 20px; font-weight: 400; color: #cfe8ff; margin: 8px 0 24px; }
-  .screen p { max-width: 560px; line-height: 1.55; color: #e8f2ff; }
-  .screen button { pointer-events: auto; font-size: 18px; padding: 12px 28px; margin: 6px; border: 0; border-radius: 4px; background: #ffe93a; color: #111; font-weight: 700; cursor: pointer; }
-  .screen button.secondary { background: #2a4a6a; color: #fff; }
-  .screen button:hover { filter: brightness(1.1); }
-  .keys { font-size: 13px; color: #9ab8d8; line-height: 1.9; margin-top: 18px; }
-  .keys b { color: #fff; }
-  #screen-title { display: flex; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1210; font-family: 'Segoe UI', system-ui, sans-serif; }
+  #game { display: block; width: 100%; height: 100%; }
+  .hud { position: absolute; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); pointer-events: none; z-index: 5; }
+  #hud-topleft { top: 14px; left: 16px; }
+  #hud-health { width: 220px; height: 14px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.5); }
+  #hud-health-fill { height: 100%; width: 100%; background: #37c24a; }
+  #hud-cash { font-size: 26px; font-weight: 800; color: #7dff8a; margin-top: 4px; }
+  #hud-stars { font-size: 24px; letter-spacing: 2px; color: #888; }
+  #hud-topright { top: 14px; right: 16px; text-align: right; font-size: 18px; font-weight: 700; }
+  #hud-mission { font-size: 14px; color: #ffd23a; margin-top: 2px; }
+  #hud-bottomleft { bottom: 16px; left: 16px; max-width: 460px; }
+  #hud-objective { font-size: 16px; font-weight: 600; color: #ffd23a; }
+  #hud-message { font-size: 17px; font-weight: 700; margin-top: 6px; transition: opacity .3s; }
+  #hud-bottomright { bottom: 16px; right: 16px; text-align: right; }
+  #hud-speed { font-size: 30px; font-weight: 800; }
+  #hud-weapon { font-size: 15px; font-weight: 700; color: #ddd; }
+  #minimap { width: 190px; height: 190px; border-radius: 50%; border: 2px solid rgba(255,255,255,.6); background: #c9a06a; margin-top: 8px; }
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; color: #fff; text-align: center; }
+  #title { background: linear-gradient(180deg, rgba(20,8,4,.82), rgba(20,8,4,.55) 55%, rgba(20,8,4,.85)); }
+  #title h1 { font-size: 84px; letter-spacing: 10px; color: #ffb03a; text-shadow: 0 4px 0 #7a2d12, 0 8px 24px rgba(0,0,0,.7); }
+  #title h2 { font-size: 20px; letter-spacing: 6px; color: #ffe9c4; margin-top: 2px; }
+  #title p.story { max-width: 620px; margin: 22px 0 6px; font-size: 17px; line-height: 1.55; color: #f3e2c7; }
+  #title p.controls { font-size: 14px; color: #cbb894; margin-top: 14px; line-height: 1.7; }
+  .btn { pointer-events: auto; cursor: pointer; margin-top: 22px; padding: 13px 42px; font-size: 19px; font-weight: 800; letter-spacing: 2px; color: #241207; background: #ffb03a; border: none; border-radius: 4px; box-shadow: 0 4px 0 #7a2d12; }
+  .btn:hover { background: #ffc65e; }
+  .btn.ghost { background: transparent; color: #ffe9c4; border: 2px solid #ffe9c4; box-shadow: none; font-size: 15px; padding: 9px 26px; }
+  #gameover { display: none; background: rgba(10,0,0,.78); }
+  #gameover h1 { font-size: 72px; letter-spacing: 8px; color: #ff4a3a; }
+  #over-stats { font-size: 18px; margin-top: 14px; color: #f3e2c7; }
+  #paused { display: none; background: rgba(0,0,0,.6); }
+  #paused h1 { font-size: 48px; letter-spacing: 6px; }
+  #paused p { margin-top: 10px; color: #ddd; }
+  #hud-hint { top: 14px; left: 50%; transform: translateX(-50%); font-size: 12px; color: rgba(255,255,255,.65); }
 </style>
 </head>
 <body>
-<div id="game"></div>
+<canvas id="game"></canvas>
 
-<div id="hud">
-  <div class="hud-top-left">
-    <div id="hud-health-bar"><div id="hud-health-fill"></div></div>
-    <div id="hud-health-text">100</div>
-    <div id="hud-cash">$0</div>
-    <div id="hud-stars">☆☆☆☆☆</div>
-  </div>
-  <div class="hud-top-right">
-    <div id="hud-day">DAY 1</div>
-    <div id="hud-clock">08:00</div>
-    <div id="hud-timer"></div>
-  </div>
-  <div class="hud-bottom-left">
-    <div id="hud-objective-title">FREE ROAM</div>
-    <div id="hud-objective">Explore Neon Harbor.</div>
-  </div>
-  <div class="hud-bottom-right">
-    <div id="hud-speed"></div>
-    <div id="hud-weapon">FISTS</div>
-    <div id="hud-ammo">—</div>
-    <canvas id="minimap" width="150" height="150"></canvas>
-  </div>
+<div class="hud" id="hud-topleft">
+  <div id="hud-health"><div id="hud-health-fill"></div></div>
+  <div id="hud-cash">$0</div>
+  <div id="hud-stars">☆☆☆☆☆</div>
+</div>
+<div class="hud" id="hud-topright">
+  <div id="hud-clock">DAY 1 08:00</div>
+  <div id="hud-mission"></div>
+  <canvas id="minimap" width="190" height="190"></canvas>
+</div>
+<div class="hud" id="hud-bottomleft">
+  <div id="hud-objective">Press ENTER to start</div>
   <div id="hud-message"></div>
 </div>
+<div class="hud" id="hud-bottomright">
+  <div id="hud-speed"></div>
+  <div id="hud-weapon">FISTS</div>
+</div>
+<div class="hud" id="hud-hint">WASD drive / walk &nbsp;·&nbsp; E steal car &nbsp;·&nbsp; F exit &nbsp;·&nbsp; Space punch / handbrake &nbsp;·&nbsp; Click shoot &nbsp;·&nbsp; 1/2 weapon &nbsp;·&nbsp; P pause &nbsp;·&nbsp; M mute</div>
 
-<div class="screen" id="screen-title">
-  <h1>NEON HARBOR</h1>
-  <h2>An open-world crime game &middot; Neon Harbor, a sun-soaked port city</h2>
-  <p>You are <b>Jax Moreno</b>, getaway driver. You owe Vera Kaine&rsquo;s crew $5,000.
-  Steal cars, run jobs, dodge the Harbor PD — and pull off the big score.</p>
-  <div>
-    <button id="btn-new">NEW GAME</button>
-    <button id="btn-continue" class="secondary">CONTINUE</button>
-  </div>
-  <div class="keys">
-    <b>WASD</b> move / drive &nbsp; <b>Shift</b> sprint &nbsp; <b>E</b> steal / enter / exit car &nbsp; <b>Mouse</b> look<br>
-    <b>Click</b> shoot (pistol) &nbsp; <b>F</b> punch &nbsp; <b>1/2</b> fists / pistol &nbsp; <b>R</b> reload<br>
-    <b>Space</b> jump &nbsp; <b>P</b> pause &nbsp; <b>M</b> next job / mute &nbsp; <b>C</b> camera
-  </div>
+<div class="overlay" id="title">
+  <h1>DUSTLINE</h1>
+  <h2>AN OPEN-WORLD CRIME GAME</h2>
+  <p class="story">Sun-baked Dustline, a desert city on the edge of nowhere. You are <b>Rook Calloway</b>,
+  a getaway driver who owes the fixer <b>Vera Kaine $5,000</b>. Steal cars, outrun the law,
+  settle scores and pull the big score — or the desert keeps you.</p>
+  <button class="btn" id="btn-start">START ENGINE</button>
+  <button class="btn ghost" id="btn-continue">CONTINUE SAVED RUN</button>
+  <p class="controls">WASD — drive / walk &nbsp;·&nbsp; E — steal car &nbsp;·&nbsp; F — exit car<br>
+  Space — punch / handbrake &nbsp;·&nbsp; Click — shoot pistol &nbsp;·&nbsp; 1 / 2 — switch weapon<br>
+  P — pause &nbsp;·&nbsp; M — mute &nbsp;·&nbsp; Drag mouse — orbit camera</p>
 </div>
 
-<div class="screen" id="screen-pause">
+<div class="overlay" id="gameover">
+  <h1 id="over-title">WASTED</h1>
+  <div id="over-stats"></div>
+  <button class="btn" id="btn-restart">BACK ON YOUR FEET (R)</button>
+</div>
+
+<div class="overlay" id="paused">
   <h1>PAUSED</h1>
-  <p>Neon Harbor waits for no one. Well — right now it does.</p>
-  <div>
-    <button id="btn-resume">RESUME</button>
-    <button id="btn-save" class="secondary">SAVE GAME</button>
-    <button id="btn-quit" class="secondary">SAVE &amp; QUIT TO TITLE</button>
-  </div>
+  <p>Press P to resume</p>
 </div>
 
-<div class="screen" id="screen-busted">
-  <h1>BUSTED</h1>
-  <p>The Harbor PD caught you. They took some of your cash and dropped you at the safehouse.</p>
-  <div><button id="btn-retry-busted">BACK ON THE STREETS</button></div>
-</div>
-
-<div class="screen" id="screen-wasted">
-  <h1>WASTED</h1>
-  <p>Jax wakes up at Harbor Hospital, lighter in the wallet but still breathing.</p>
-  <div><button id="btn-retry-wasted">GET UP AND GO</button></div>
-</div>
-
-<script type="importmap">
-{ "imports": { "three": "./vendor/three.module.min.js" } }
-</script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

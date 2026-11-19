@@ -1,90 +1,165 @@
-// audio.js — all sound is synthesized with WebAudio: no audio files.
-// Engine hum (oscillator pitched by speed), siren wail, gunshot noise,
-// punch thud, cash chime, and a low-key bass music loop.
-import { G } from './state.js';
+// audio.js — DUSTLINE: all sound is synthesized with WebAudio, no audio files.
+// Engine hum, sirens, gunshots, punches, pickups and a lazy desert bass loop.
+// Audio starts on the first user gesture (browsers require it).
 
 let ctx = null;
-let engineOsc = null, engineGain = null;
+let master = null;
+let engineOsc = null;
+let engineGain = null;
+let sirenOsc = null;
+let sirenGain = null;
 let musicTimer = null;
-let musicStep = 0;
+let muted = false;
 
 export function initAudio() {
   if (ctx) return;
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    // Engine: a sawtooth through a low-pass, pitch follows the car.
+    master = ctx.createGain();
+    master.gain.value = 0.5;
+    master.connect(ctx.destination);
+    // Engine: a low sawtooth whose pitch follows speed.
     engineOsc = ctx.createOscillator();
     engineOsc.type = 'sawtooth';
     engineOsc.frequency.value = 55;
-    const filt = ctx.createBiquadFilter();
-    filt.type = 'lowpass';
-    filt.frequency.value = 320;
     engineGain = ctx.createGain();
     engineGain.gain.value = 0;
-    engineOsc.connect(filt).connect(engineGain).connect(ctx.destination);
+    const engineFilter = ctx.createBiquadFilter();
+    engineFilter.type = 'lowpass';
+    engineFilter.frequency.value = 420;
+    engineOsc.connect(engineFilter);
+    engineFilter.connect(engineGain);
+    engineGain.connect(master);
     engineOsc.start();
+    // Siren: a sine that wails between two notes.
+    sirenOsc = ctx.createOscillator();
+    sirenOsc.type = 'sine';
+    sirenOsc.frequency.value = 700;
+    sirenGain = ctx.createGain();
+    sirenGain.gain.value = 0;
+    sirenOsc.connect(sirenGain);
+    sirenGain.connect(master);
+    sirenOsc.start();
+    startMusic();
   } catch (e) {
     ctx = null;
   }
 }
 
-function tone(freq, dur, type, vol, slideTo) {
-  if (!ctx || G.muted) return;
-  const o = ctx.createOscillator();
-  const g = ctx.createGain();
-  o.type = type || 'sine';
-  o.frequency.value = freq;
-  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, ctx.currentTime + dur);
-  g.gain.value = vol;
-  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
-  o.connect(g).connect(ctx.destination);
-  o.start();
-  o.stop(ctx.currentTime + dur);
+export function resumeAudio() {
+  if (ctx && ctx.state === 'suspended') ctx.resume();
 }
 
-function noise(dur, vol, freq) {
-  if (!ctx || G.muted) return;
-  const len = Math.floor(ctx.sampleRate * dur);
-  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-  const data = buf.getChannelData(0);
+function startMusic() {
+  // Lazy desert bass: a slow minor groove, one note per beat.
+  const notes = [55, 55, 65.4, 49, 55, 55, 73.4, 65.4];
+  let step = 0;
+  musicTimer = setInterval(() => {
+    if (!ctx || muted || document.hidden) return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = notes[step % notes.length];
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.12, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+    osc.connect(g); g.connect(master);
+    osc.start(t); osc.stop(t + 0.6);
+    // A soft hat tick on the off-beat.
+    if (step % 2 === 1) {
+      const n = noiseBurst(0.03, 0.05, 6000);
+      n.connect(master);
+    }
+    step++;
+  }, 500);
+}
+
+function noiseBurst(duration, volume, filterFreq) {
+  const len = Math.floor(ctx.sampleRate * duration);
+  const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
   for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
   const src = ctx.createBufferSource();
-  src.buffer = buf;
-  const filt = ctx.createBiquadFilter();
-  filt.type = 'lowpass';
-  filt.frequency.value = freq || 1200;
+  src.buffer = buffer;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = filterFreq || 3000;
   const g = ctx.createGain();
-  g.gain.value = vol;
-  src.connect(filt).connect(g).connect(ctx.destination);
+  g.gain.value = volume;
+  src.connect(filter); filter.connect(g);
   src.start();
+  return g;
 }
 
-export function playShoot() { noise(0.16, 0.5, 2600); tone(160, 0.1, 'square', 0.25, 60); }
-export function playPunch() { noise(0.1, 0.4, 500); }
-export function playEmpty() { tone(900, 0.05, 'square', 0.12); }
-export function playReload() { tone(500, 0.06, 'square', 0.15); setTimeout(() => tone(700, 0.06, 'square', 0.15), 90); }
-export function playCash() { tone(880, 0.12, 'sine', 0.25); setTimeout(() => tone(1318, 0.18, 'sine', 0.25), 110); }
-export function playHurt() { tone(140, 0.25, 'sawtooth', 0.3, 70); }
-export function playSirenBlip() { tone(750, 0.35, 'sine', 0.12, 1050); }
-export function playMission() { tone(523, 0.15, 'sine', 0.25); setTimeout(() => tone(659, 0.15, 'sine', 0.25), 140); setTimeout(() => tone(784, 0.3, 'sine', 0.25), 280); }
-export function playBusted() { tone(400, 0.4, 'sawtooth', 0.3, 180); }
+function blip(freq, duration, volume, type) {
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  osc.type = type || 'sine';
+  osc.frequency.setValueAtTime(freq, t);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(volume, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+  osc.connect(g); g.connect(master);
+  osc.start(t); osc.stop(t + duration + 0.02);
+}
 
-export function updateEngine(speed, inCar) {
-  if (!ctx || !engineOsc) return;
-  const target = G.muted ? 0 : (inCar ? 0.05 + Math.min(0.09, Math.abs(speed) * 0.003) : 0);
+export function setEngine(speed, inCar) {
+  if (!ctx) return;
+  const target = inCar ? 0.05 + Math.min(Math.abs(speed) / 34, 1) * 0.06 : 0;
   engineGain.gain.setTargetAtTime(target, ctx.currentTime, 0.1);
-  engineOsc.frequency.setTargetAtTime(50 + Math.abs(speed) * 4.5, ctx.currentTime, 0.1);
+  engineOsc.frequency.setTargetAtTime(50 + Math.abs(speed) * 4.5, ctx.currentTime, 0.08);
 }
 
-// A slow bass loop: Am – F – C – G roots, one note per beat at 100 BPM.
-const BASS = [55, 43.65, 65.41, 49];
-export function startMusic() {
-  if (!ctx || musicTimer) return;
-  musicTimer = setInterval(() => {
-    if (G.muted || G.mode !== 'playing') return;
-    const f = BASS[musicStep % 4];
-    tone(f, 0.55, 'triangle', 0.12);
-    if (musicStep % 2 === 0) tone(f * 2, 0.2, 'sine', 0.05);
-    musicStep += 1;
-  }, 600);
+export function setSiren(on) {
+  if (!ctx) return;
+  sirenGain.gain.setTargetAtTime(on ? 0.045 : 0, ctx.currentTime, 0.2);
+  if (on) {
+    const t = ctx.currentTime;
+    sirenOsc.frequency.cancelScheduledValues(t);
+    sirenOsc.frequency.setValueAtTime(700, t);
+    sirenOsc.frequency.linearRampToValueAtTime(950, t + 0.4);
+    sirenOsc.frequency.linearRampToValueAtTime(700, t + 0.8);
+  }
+}
+
+export function playShot() {
+  if (!ctx) return;
+  noiseBurst(0.14, 0.5, 2400);
+  blip(160, 0.08, 0.3, 'square');
+}
+
+export function playPunch() {
+  if (!ctx) return;
+  noiseBurst(0.09, 0.35, 500);
+}
+
+export function playHit() {
+  if (!ctx) return;
+  blip(220, 0.12, 0.25, 'triangle');
+  blip(110, 0.15, 0.2, 'triangle');
+}
+
+export function playPickup() {
+  if (!ctx) return;
+  blip(660, 0.1, 0.25);
+  setTimeout(() => blip(880, 0.14, 0.25), 90);
+  setTimeout(() => blip(1320, 0.2, 0.22), 180);
+}
+
+export function playMission() {
+  if (!ctx) return;
+  [523, 659, 784].forEach((f, i) => setTimeout(() => blip(f, 0.18, 0.25), i * 110));
+}
+
+export function playBusted() {
+  if (!ctx) return;
+  [392, 330, 262].forEach((f, i) => setTimeout(() => blip(f, 0.3, 0.25, 'sawtooth'), i * 160));
+}
+
+export function toggleMute() {
+  muted = !muted;
+  if (master) master.gain.value = muted ? 0 : 0.5;
+  return muted;
 }

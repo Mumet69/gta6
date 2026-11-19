@@ -1,59 +1,75 @@
-// input.js — keyboard + mouse, with pointer lock for looking around.
-// WASD move/drive, Shift sprint, Space jump, E enter/exit/steal car,
-// F punch, 2 pistol / 1 fists, R reload, P pause, M mute, C camera,
-// click to shoot, mouse to look.
-export const keys = {};
-let lookX = 0, lookY = 0;
-let onMouseDown = null;
-let onKey = null;
+// input.js — DUSTLINE: keyboard + mouse. WASD/arrows drive and walk, E enters
+// and steals cars, F exits a car, Space punches (or handbrakes in a car),
+// mouse click shoots the pistol, drag orbits the camera, P pauses, M mutes.
 
-export function initInput(callbacks) {
-  onMouseDown = callbacks.onMouseDown || null;
-  onKey = callbacks.onKey || null;
+export const input = {
+  up: false, down: false, left: false, right: false,
+  handbrake: false,
+  mouseDown: false,
+  mouseDX: 0, mouseDY: 0,
+  camYaw: 0, camPitch: 0,
+  // Edge-triggered actions, consumed by main.js each frame.
+  pressed: new Set(),
+};
+
+let dragging = false;
+let lastX = 0, lastY = 0;
+
+const KEYMAP = {
+  KeyW: 'up', ArrowUp: 'up',
+  KeyS: 'down', ArrowDown: 'down',
+  KeyA: 'left', ArrowLeft: 'left',
+  KeyD: 'right', ArrowRight: 'right',
+  Space: 'handbrake',
+};
+
+export function initInput(canvas) {
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
-    keys[e.code] = true;
-    if (onKey) onKey(e.code, true);
-    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+    const mapped = KEYMAP[e.code];
+    if (mapped) {
+      input[mapped] = true;
       e.preventDefault();
     }
+    input.pressed.add(e.code);
+    if (e.code === 'Space') e.preventDefault();
   });
-  window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+  window.addEventListener('keyup', (e) => {
+    const mapped = KEYMAP[e.code];
+    if (mapped) input[mapped] = false;
+  });
+  canvas.addEventListener('mousedown', (e) => {
+    input.mouseDown = true;
+    dragging = true;
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  window.addEventListener('mouseup', () => {
+    input.mouseDown = false;
+    dragging = false;
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    input.mouseDX += e.clientX - lastX;
+    input.mouseDY += e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+  });
   window.addEventListener('blur', () => {
-    for (const k of Object.keys(keys)) keys[k] = false;
-  });
-  document.addEventListener('mousemove', (e) => {
-    if (document.pointerLockElement) {
-      lookX += e.movementX * 0.0028;
-      lookY += e.movementY * 0.0022;
-      lookY = Math.max(-0.9, Math.min(0.9, lookY));
-    }
-  });
-  document.addEventListener('mousedown', (e) => {
-    if (e.button === 0 && onMouseDown) onMouseDown(e.clientX, e.clientY);
+    input.up = input.down = input.left = input.right = false;
+    input.handbrake = false;
+    dragging = false;
   });
 }
 
-export function getLook() { return { x: lookX, y: lookY }; }
-// Consume the accumulated mouse delta (returns it and resets to zero).
-export function consumeLook() {
-  const d = { x: lookX, y: lookY };
-  lookX = 0; lookY = 0;
-  return d;
-}
-export function resetLook() { lookX = 0; lookY = 0; }
-
-export function readMoveInput() {
-  return {
-    up: !!(keys['KeyW'] || keys['ArrowUp']),
-    down: !!(keys['KeyS'] || keys['ArrowDown']),
-    left: !!(keys['KeyA'] || keys['ArrowLeft']),
-    right: !!(keys['KeyD'] || keys['ArrowRight']),
-    sprint: !!(keys['ShiftLeft'] || keys['ShiftRight']),
-    jump: !!keys['Space'],
-  };
+export function consumePress(code) {
+  if (input.pressed.has(code)) {
+    input.pressed.delete(code);
+    return true;
+  }
+  return false;
 }
 
-export function lockPointer(el) {
-  if (el && el.requestPointerLock) el.requestPointerLock();
+export function endFrameInput() {
+  input.pressed.clear();
+  input.mouseDX = 0;
+  input.mouseDY = 0;
 }

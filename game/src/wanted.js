@@ -1,100 +1,149 @@
-// wanted.js — the wanted system: heat from crimes, stars, police response.
-// Crimes add heat; heat maps to 0–5 stars. Police cars spawn up to a cap that
-// grows with the wanted level and chase the player; foot cops join at 2+
-// stars. Heat decays when the player lays low, and stars fall with it.
-import { G } from './state.js';
-import { clamp } from './utils.js';
-import { spawnCar } from './vehicles.js';
-import { spawnCop } from './people.js';
-import { makeRng } from './utils.js';
+// wanted.js — DUSTLINE: the wanted system. Crimes add heat; heat crosses
+// thresholds into stars (0-5). Police cars spawn and chase the player, foot
+// cops join at 2+ stars, and the heat decays when the player stays clean and
+// out of sight. Getting caught on foot or wrecked at high wanted = busted.
 
-const HEAT_PER_STAR = 20;
-const POLICE_CAP = [0, 1, 2, 3, 4, 5];
+import { S, showMessage } from './state.js';
+import { makeRng, clamp, angleLerp } from './utils.js';
+import { City } from './city.js';
+import { traffic, spawnPoliceCar, removeCar } from './vehicles.js';
+import { footCops, spawnFootCop } from './people.js';
 
-export function addHeat(n, reason) {
-  G.heat = clamp(G.heat + n, 0, 100);
-  const stars = Math.min(5, Math.floor(G.heat / HEAT_PER_STAR));
-  if (stars > G.wanted) {
-    G.wanted = stars;
-    if (G.onWantedUp) G.onWantedUp(stars, reason);
+const STAR_THRESHOLDS = [0, 15, 35, 55, 75, 92]; // heat needed for each star
+const MAX_POLICE_CARS = [0, 1, 2, 3, 4, 5];
+const MAX_FOOT_COPS = [0, 0, 1, 2, 3, 4];
+
+let rng = makeRng(99);
+let carSpawnTimer = 0;
+let copSpawnTimer = 0;
+
+export function initWanted(seed) {
+  rng = makeRng(seed * 17 + 11);
+  carSpawnTimer = 0;
+  copSpawnTimer = 0;
+}
+
+export function addHeat(amount, crimeName) {
+  if (S.over) return;
+  S.heat = clamp(S.heat + amount, 0, 100);
+  S.lastCrime = S.time;
+  S.stats.crimes++;
+  const newStars = starsForHeat(S.heat);
+  if (newStars > S.wanted) {
+    S.wanted = newStars;
+    showMessage(crimeName + ' — wanted level ' + newStars + '!', 2.5);
   }
 }
 
-export function setWanted(stars) {
-  G.wanted = clamp(stars, 0, 5);
-  G.heat = G.wanted * HEAT_PER_STAR + 5;
+export function starsForHeat(heat) {
+  let stars = 0;
+  for (let i = 1; i <= 5; i++) if (heat >= STAR_THRESHOLDS[i]) stars = i;
+  return stars;
 }
 
-export function wantedLabel() {
-  return '★'.repeat(G.wanted) + '☆'.repeat(5 - G.wanted);
+function policeCars() {
+  return traffic.filter(c => c.kind === 'police');
 }
 
-export function updateWanted(dt, rng) {
-  // Decay: laying low (no new crimes) cools the heat down.
-  if (G.heat > 0) {
-    const hidden = G.playerCar ? 0.55 : 0.8; // harder to lose them in a car
-    G.heat = Math.max(0, G.heat - dt * hidden * 1.4);
-    const stars = Math.min(5, Math.floor(G.heat / HEAT_PER_STAR));
-    if (stars < G.wanted) G.wanted = stars;
+function spawnPointNear(px, pz, dist) {
+  // Pick a road node roughly `dist` away from the player.
+  let best = null, bestScore = Infinity;
+  for (const n of City.nodes) {
+    const d = Math.hypot(n.x - px, n.z - pz);
+    const score = Math.abs(d - dist) + rng.next() * 30;
+    if (score < bestScore) { bestScore = score; best = n; }
   }
-  // Police cars: keep the chase force at the cap for the current stars.
-  const cap = POLICE_CAP[G.wanted];
-  while (G.policeCars.length < cap) {
-    const angle = rng.range(0, Math.PI * 2);
-    const dist = 55 + rng.range(0, 30);
-    const px = G.player.pos.x + Math.sin(angle) * dist;
-    const pz = G.player.pos.z + Math.cos(angle) * dist;
-    const car = spawnCar(G.scene, rng, { police: true, pos: { x: px, z: pz } });
-    car.speed = 12;
-    G.policeCars.push(car);
-    G.cars.push(car);
-  }
-  // Foot cops join the hunt at 2+ stars (max 3).
-  if (G.wanted >= 2 && G.cops.length < Math.min(3, G.wanted - 1)) {
-    const angle = rng.range(0, Math.PI * 2);
-    const cop = spawnCop(G.scene, {
-      x: G.player.pos.x + Math.sin(angle) * 18,
-      z: G.player.pos.z + Math.cos(angle) * 18,
-    });
-    G.cops.push(cop);
-  }
-  // When the wanted level falls, excess police give up and drive off.
-  while (G.policeCars.length > cap) {
-    const car = G.policeCars.pop();
-    const ci = G.cars.indexOf(car);
-    if (ci >= 0) G.cars.splice(ci, 1);
-    G.scene.remove(car.mesh);
-  }
-  if (G.wanted < 2) {
-    while (G.cops.length > 0) {
-      const cop = G.cops.pop();
-      G.scene.remove(cop.mesh);
+  return best || { x: px + dist, z: pz };
+}
+
+export function updateWanted(dt, scene) {
+  if (!S.started || S.over) return;
+  // Passive decay: no crime for a while and the heat cools off.
+  if (S.time - S.lastCrime > 12 && S.wanted > 0) {
+    S.heat = Math.max(0, S.heat - dt * 1.6);
+    const stars = starsForHeat(S.heat);
+    if (stars < S.wanted) {
+      S.wanted = stars;
+      if (stars === 0) showMessage('You lost the heat.', 2);
     }
   }
-}
+  if (S.wanted === 0) return;
 
-// Police car chase: steer toward the player, ram speed, siren flash.
-export function updatePoliceChase(dt) {
-  for (const car of G.policeCars) {
-    const dx = G.player.pos.x - car.pos.x;
-    const dz = G.player.pos.z - car.pos.z;
-    const d = Math.hypot(dx, dz);
+  // Keep the right number of police cars on the road (timer-based, so the
+  // spawn is reliable even at low frame rates).
+  const wantCars = MAX_POLICE_CARS[S.wanted];
+  const cars = policeCars();
+  if (cars.length < wantCars) {
+    carSpawnTimer -= dt;
+    if (carSpawnTimer <= 0) {
+      carSpawnTimer = 1.2;
+      const p = spawnPointNear(S.px, S.pz, 70 + rng.range(0, 40));
+      spawnPoliceCar(scene, p.x, p.z);
+    }
+  } else {
+    carSpawnTimer = 0;
+  }
+  // Foot cops join from 2 stars.
+  const wantCops = MAX_FOOT_COPS[S.wanted];
+  if (footCops.filter(c => !c.down).length < wantCops) {
+    copSpawnTimer -= dt;
+    if (copSpawnTimer <= 0) {
+      copSpawnTimer = 2;
+      const p = spawnPointNear(S.px, S.pz, 25 + rng.range(0, 15));
+      spawnFootCop(scene, p.x, p.z);
+    }
+  } else {
+    copSpawnTimer = 0;
+  }
+  // Drop police cars that fell far behind.
+  for (const car of [...cars]) {
+    const d = Math.hypot(car.x - S.px, car.z - S.pz);
+    if (d > 260) removeCar(scene, car);
+  }
+
+  // Chase: police cars steer toward the player and ram.
+  for (const car of policeCars()) {
+    car.sirenPhase += dt * 6;
+    const dx = S.px - car.x, dz = S.pz - car.z;
+    const dist = Math.hypot(dx, dz);
     const want = Math.atan2(dx, dz);
-    let diff = want - car.heading;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    car.heading += clamp(diff, -2.4 * dt, 2.4 * dt);
-    const targetSpeed = d > 30 ? car.maxSpeed : car.maxSpeed * 0.8;
-    car.speed += clamp(targetSpeed - car.speed, -10 * dt, 12 * dt);
-    car.pos.x += Math.sin(car.heading) * car.speed * dt;
-    car.pos.z += Math.cos(car.heading) * car.speed * dt;
+    car.heading = angleLerp(car.heading, want, clamp(2.2 * dt, 0, 1));
+    const targetSpeed = dist > 12 ? 17 + S.wanted * 1.2 : 10;
+    car.speed = lerp(car.speed, targetSpeed, clamp(1.2 * dt, 0, 1));
+    car.x += Math.sin(car.heading) * car.speed * dt;
+    car.z += Math.cos(car.heading) * car.speed * dt;
+    car.mesh.position.set(car.x, 0, car.z);
     car.mesh.rotation.y = car.heading;
-    car.siren += dt;
-    // Ram the player: a hard hit hurts and adds a jolt.
-    if (d < 3.2 && G.player.inCar) {
-      if (G.onRam) G.onRam(car);
-    } else if (d < 2.2 && !G.player.inCar) {
-      if (G.onRam) G.onRam(car);
+    // Flash the light bar.
+    if (car.mesh.userData.lights) {
+      const [r, b] = car.mesh.userData.lights;
+      const on = Math.sin(car.sirenPhase) > 0;
+      r.material.emissiveIntensity = on ? 2 : 0.2;
+      b.material.emissiveIntensity = on ? 0.2 : 2;
+    }
+    // Ram the player's car.
+    if (dist < 3.2) {
+      if (S.car) {
+        S.car.speed *= 0.55;
+        S.health = Math.max(0, S.health - 6 * dt);
+      } else if (S.onFoot) {
+        S.health = Math.max(0, S.health - 14 * dt);
+      }
+      if (S.health <= 0) S.wasted = true;
     }
   }
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// Clear all police (used when a mission ends or the player escapes).
+export function clearPolice(scene) {
+  for (const car of [...policeCars()]) removeCar(scene, car);
+  for (const cop of [...footCops]) {
+    scene.remove(cop.mesh);
+    const i = footCops.indexOf(cop);
+    if (i >= 0) footCops.splice(i, 1);
+  }
+  S.wanted = 0;
+  S.heat = 0;
 }
