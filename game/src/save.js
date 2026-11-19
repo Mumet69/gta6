@@ -1,22 +1,29 @@
-// save.js — DUSTLINE: localStorage save/load. Keeps the run's cash, mission
-// progress and best haul between sessions. A save is only written when the
-// player has started a run.
+// save.js — localStorage save / load for Velvet Bay.
+// Stores money, debt, mission progress, player position and health.
+// Nothing here touches the network.
 
-import { S } from './state.js';
+export const SAVE_KEY = 'velvet-bay-save-v1';
 
-const KEY = 'dustline-save-v1';
-
-export function saveGame() {
-  if (!S.started) return false;
+export function saveGame(state, player) {
   try {
     const data = {
-      cash: S.cash,
-      mission: S.mission,
-      missionsDone: S.stats.missionsDone,
-      day: S.day,
+      v: 1,
       savedAt: Date.now(),
+      money: state.money,
+      debt: state.debt,
+      health: state.health,
+      ammo: state.ammo,
+      reserveAmmo: state.reserveAmmo,
+      missionIndex: state.missionIndex,
+      missionsDone: state.missionsDone,
+      stats: state.stats,
+      player: player ? {
+        x: player.pos.x,
+        z: player.pos.z,
+        heading: player.heading,
+      } : null,
     };
-    localStorage.setItem(KEY, JSON.stringify(data));
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     return true;
   } catch (e) {
     return false;
@@ -25,16 +32,18 @@ export function saveGame() {
 
 export function loadGame() {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const data = JSON.parse(raw);
+    if (!data || data.v !== 1) return null;
+    return data;
   } catch (e) {
     return null;
   }
 }
 
 export function clearSave() {
-  try { localStorage.removeItem(KEY); } catch (e) { /* no storage */ }
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
 }
 
 export function hasSave() {
