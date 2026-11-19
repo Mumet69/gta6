@@ -1,94 +1,66 @@
-// utils.js — DUSTLINE: seeded RNG + math helpers (no dependencies).
-// Every random choice in the city and traffic uses a seeded generator so the
-// world is identical on every load for a given seed.
+// utils.js — small math and random helpers shared by every Velvet Bay module.
+// No imports. Everything here is pure and deterministic when given a seed.
 
+export function clamp(v, a, b) {
+  return v < a ? a : v > b ? b : v;
+}
+
+export function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+// Shortest signed difference between two angles (radians).
+export function angleDiff(a, b) {
+  let d = (b - a) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+export function angleLerp(a, b, t) {
+  return a + angleDiff(a, b) * clamp(t, 0, 1);
+}
+
+export function rand(a = 1, b) {
+  if (b === undefined) { b = a; a = 0; }
+  return a + Math.random() * (b - a);
+}
+
+export function randInt(a, b) {
+  return Math.floor(rand(a, b + 1));
+}
+
+export function choice(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+export function dist2d(ax, az, bx, bz) {
+  const dx = ax - bx, dz = az - bz;
+  return Math.sqrt(dx * dx + dz * dz);
+}
+
+// Deterministic RNG (mulberry32) so the city layout is identical every load.
 export function mulberry32(seed) {
-  let a = seed >>> 0;
+  let s = seed >>> 0;
   return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
-export function makeRng(seed) {
-  const next = mulberry32(seed);
-  return {
-    next,
-    range(min, max) { return min + next() * (max - min); },
-    int(min, max) { return Math.floor(min + next() * (max - min + 1)); },
-    pick(arr) { return arr[Math.floor(next() * arr.length)]; },
-    chance(p) { return next() < p; },
-  };
+export function moneyStr(n) {
+  const v = Math.round(n);
+  return '$' + v.toLocaleString('en-US');
 }
 
-export const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
-export const lerp = (a, b, t) => a + (b - a) * t;
-export const TAU = Math.PI * 2;
-
-export function angleLerp(a, b, t) {
-  let d = (b - a) % TAU;
-  if (d > Math.PI) d -= TAU;
-  if (d < -Math.PI) d += TAU;
-  return a + d * t;
+export function pad2(n) {
+  return n < 10 ? '0' + n : '' + n;
 }
 
-export function angleDiff(a, b) {
-  let d = (b - a) % TAU;
-  if (d > Math.PI) d -= TAU;
-  if (d < -Math.PI) d += TAU;
-  return d;
-}
-
-// Distance from a point (x,z) to a segment (ax,az)-(bx,bz).
-export function distToSegment(px, pz, ax, az, bx, bz) {
-  const dx = bx - ax, dz = bz - az;
-  const len2 = dx * dx + dz * dz;
-  let t = len2 === 0 ? 0 : ((px - ax) * dx + (pz - az) * dz) / len2;
-  t = clamp(t, 0, 1);
-  const cx = ax + dx * t, cz = az + dz * t;
-  return Math.hypot(px - cx, pz - cz);
-}
-
-// Circle (x,z,r) vs axis-aligned box {minX,maxX,minZ,maxZ}: true on overlap.
-export function circleHitsBox(x, z, r, b) {
-  const cx = clamp(x, b.minX, b.maxX);
-  const cz = clamp(z, b.minZ, b.maxZ);
-  const dx = x - cx, dz = z - cz;
-  return dx * dx + dz * dz < r * r;
-}
-
-// Push a circle out of a box; returns the corrected {x,z}.
-export function resolveCircleBox(x, z, r, b) {
-  const cx = clamp(x, b.minX, b.maxX);
-  const cz = clamp(z, b.minZ, b.maxZ);
-  let dx = x - cx, dz = z - cz;
-  let d2 = dx * dx + dz * dz;
-  if (d2 >= r * r) return { x, z };
-  if (d2 < 1e-6) {
-    // Centre inside the box: push out along the smallest penetration axis.
-    const pl = x - (b.minX - r), pr = (b.maxX + r) - x;
-    const pt = z - (b.minZ - r), pb = (b.maxZ + r) - z;
-    const m = Math.min(pl, pr, pt, pb);
-    if (m === pl) return { x: b.minX - r, z };
-    if (m === pr) return { x: b.maxX + r, z };
-    if (m === pt) return { x, z: b.minZ - r };
-    return { x, z: b.maxZ + r };
-  }
-  const d = Math.sqrt(d2);
-  const push = (r - d) / d;
-  return { x: x + dx * push, z: z + dz * push };
-}
-
-export function fmtCash(n) {
-  return '$' + Math.floor(n).toLocaleString('en-US');
-}
-
-export function fmtClock(hour, minute) {
-  const h = Math.floor(hour) % 24;
-  const m = Math.floor(minute) % 60;
-  const hh = String(h).padStart(2, '0');
-  const mm = String(m).padStart(2, '0');
-  return hh + ':' + mm;
+export function formatClock(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return pad2(m) + ':' + pad2(s);
 }
