@@ -1,5 +1,9 @@
 # SOLMAR HEAT — an open-world crime game
 
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/Mumet69/gta6/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/Mumet69/gta6/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+
 **SOLMAR HEAT** is an original open-world crime game built for make.fun's
 gta6-01 bounty ("Make GTA 6"). You are **Rio Vega**, getaway driver in
 **Solmar City**, a sun-soaked coastal town. Steal cars, outrun the Solmar PD,
