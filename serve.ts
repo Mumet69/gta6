@@ -2,7 +2,7 @@
 // locally without a build step: `node serve.ts` serves game/ on http://localhost:8080.
 // It sends the MIME types a browser game needs, refuses any path outside game/, and otherwise
 // does nothing clever: this is a development convenience, not a web server for the internet.
-import { createReadStream, statSync } from 'node:fs';
+import { createReadStream, readdirSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,20 @@ const args = process.argv.slice(2);
 const portIndex = args.indexOf('--port');
 const requested = portIndex === -1 ? 8080 : Number(args[portIndex + 1]);
 const port = Number.isInteger(requested) && requested > 0 && requested < 65536 ? requested : 8080;
+// --host lets a phone or another machine on the LAN play the game too;
+// it defaults to loopback so the game is not exposed by accident.
+const hostIndex = args.indexOf('--host');
+const host = hostIndex === -1 ? '127.0.0.1' : (args[hostIndex + 1] || '127.0.0.1');
+
+// --quiet hides the per-request log; --list prints the game files once at
+// startup so a screenshot run can confirm the bundle it is about to serve.
+const quiet = args.includes('--quiet');
+const listFiles = args.includes('--list');
+if (listFiles) {
+  const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true })
+    .flatMap((e) => e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
+  try { for (const f of walk(root)) if (!quiet) console.log('  ' + f); } catch { /* ignore */ }
+}
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -66,7 +80,12 @@ createServer((request, response) => {
     'content-length': size,
     'cache-control': 'no-store',
   });
+  // HEAD asks for the headers only (used by screenshot tooling to probe files).
+  if (request.method === 'HEAD') {
+    response.end();
+    return;
+  }
   createReadStream(file).pipe(response);
-}).listen(port, '127.0.0.1', () => {
-  console.log(`game/ is on http://localhost:${port}`);
+}).listen(port, host, () => {
+  console.log(`game/ is on http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
 });
