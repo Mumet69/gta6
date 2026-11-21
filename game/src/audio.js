@@ -122,6 +122,10 @@ export class AudioSys {
   shot() { this._noiseBurst(0.14, 1800, 0.5, 'bandpass'); this._tone(160, 0.1, 0.35, 'sine'); }
   enemyShot() { this._noiseBurst(0.1, 1200, 0.16, 'bandpass'); }
   punch() { this._noiseBurst(0.08, 500, 0.4); }
+  horn() { this._tone(220, 0.28, 0.22, 'square'); this._tone(277, 0.28, 0.18, 'square'); }
+  coin() { this._tone(988, 0.09, 0.2, 'sine'); this._tone(1319, 0.14, 0.2, 'sine', 0.07); }
+  taxiBell() { this._tone(1175, 0.1, 0.2, 'triangle'); this._tone(1175, 0.1, 0.2, 'triangle', 0.16); }
+  raceBeep() { this._tone(880, 0.09, 0.2, 'square'); }
   blip() { this._tone(880, 0.07, 0.18, 'sine'); }
   click() { this._tone(660, 0.05, 0.12, 'square'); }
   pickup() { this._tone(660, 0.09, 0.2, 'sine'); this._tone(990, 0.12, 0.2, 'sine', 0.08); }
@@ -129,6 +133,14 @@ export class AudioSys {
   crash() { this._noiseBurst(0.3, 300, 0.5); }
   busted() { this._tone(392, 0.25, 0.25, 'sawtooth'); this._tone(311, 0.4, 0.25, 'sawtooth', 0.22); }
   wasted() { this._tone(330, 0.3, 0.25, 'sawtooth'); this._tone(247, 0.5, 0.25, 'sawtooth', 0.25); }
+  // v3 sounds: a cash register for front income, a wrench for the garage,
+  // an alarm for turf wars and heist prep, and a heavier blast for the shotgun.
+  register() { this._tone(1320, 0.08, 0.2, 'square'); this._tone(1760, 0.16, 0.2, 'square', 0.08); }
+  wrench() { this._tone(300, 0.06, 0.2, 'square'); this._tone(420, 0.06, 0.2, 'square', 0.07); this._tone(300, 0.06, 0.2, 'square', 0.14); }
+  alarm() { this._tone(740, 0.18, 0.25, 'sawtooth'); this._tone(740, 0.18, 0.25, 'sawtooth', 0.22); this._tone(988, 0.18, 0.25, 'sawtooth', 0.44); }
+  shotgun() { this._noiseBurst(0.3, 900, 0.7, 'bandpass'); this._tone(110, 0.18, 0.4, 'sine'); }
+  thunder() { this._noiseBurst(0.8, 120, 0.4); }
+
   missionDone() {
     [523, 659, 784, 1047].forEach((f, i) => this._tone(f, 0.16, 0.22, 'triangle', i * 0.11));
   }

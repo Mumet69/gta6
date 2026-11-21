@@ -6,16 +6,19 @@
 
 import * as THREE from 'three';
 import { clamp, lerp, angleLerp, dist2d, rand } from './utils.js';
-import { createState, addMoney, addHeat } from './state.js';
+import { createState, addMoney, addHeat, addRespect, setWeapon, payBribe, turfHeld } from './state.js';
 import { Input } from './input.js';
 import { AudioSys } from './audio.js';
-import { buildCity, CITY } from './city.js';
-import { makeCar, drivePlayerCar, TrafficSystem } from './vehicles.js';
+import { buildCity, buildHeightsQuarter, districtAt, CITY } from './city.js';
+import { makeCar, drivePlayerCar, TrafficSystem, GARAGE_UPGRADES, applyGarageUpgrade, upgradeCost } from './vehicles.js';
 import { PedSystem, makePersonMesh } from './people.js';
-import { Combat } from './combat.js';
+import { Combat, WEAPONS } from './combat.js';
 import { MissionManager, MISSIONS } from './missions.js';
 import { WantedSystem } from './wanted.js';
 import { HUD } from './hud.js';
+import { SideActivities } from './activities.js';
+import { DayNightCycle, phaseName, rainLabel } from './weather.js';
+import { EmpireSystem, BUSINESSES, TURF_DISTRICTS, HEIST_PREP } from './empire.js';
 import { saveGame, loadGame, hasSave, clearSave } from './save.js';
 
 const params = new URLSearchParams(location.search);
@@ -31,6 +34,9 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 1200);
 
 const city = buildCity(scene);
+// v3: The Heights quarter (villas, lookout, Vipers turf) rises in the
+// north-west, with a vendor, a rival racer and a gang patrol living in it.
+buildHeightsQuarter(scene, city);
 const input = new Input(renderer.domElement);
 const audio = new AudioSys();
 const hud = new HUD();
@@ -70,13 +76,20 @@ scene.add(player.mesh);
 
 traffic.spawnInitial(14);
 peds.spawnInitial(24);
+peds.spawnVendor(-51, 116);
+peds.spawnRival(58, -52);
+peds.spawnGangPatrol(-203, -203, 3);
+combat.spawnPickups();
+const weather = new DayNightCycle(scene, { sun: city.sun, hemi: city.hemi });
 
 // Mission beacon: a light pillar + ground ring at the current objective.
 const beaconMat = new THREE.MeshBasicMaterial({
   color: 0xffd34d, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false,
 });
-const beacon = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 60, 12, 1, true), beaconMat);
-beacon.position.y = 30;
+// Tall enough to poke above the downtown rooftops, so the objective reads
+// from anywhere in the city.
+const beacon = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 120, 12, 1, true), beaconMat);
+beacon.position.y = 60;
 scene.add(beacon);
 const ring = new THREE.Mesh(
   new THREE.RingGeometry(2.2, 3.0, 24),
@@ -92,8 +105,10 @@ const G = {
 const world = {
   banner: (t, s) => hud.banner(t, s),
   addMoney: (n) => { addMoney(state, n); hud.toast('+$' + n); },
+  addRespect: (n) => addRespect(state, n),
   setWanted: (n) => wanted.setWanted(n),
   spawnGang: (x, z, n) => combat.spawnGang(x, z, n),
+  spawnSportscar: (x, z) => traffic.spawnParked(0xd8b13a, x, z, Math.PI / 2, 'sport'),
   playSound: (name) => { if (audio[name]) audio[name](); },
   nextMissionIn: (t) => { G.nextMissionAt = state.time + t; },
   onDebtPaid: () => {
@@ -105,6 +120,13 @@ const world = {
 };
 const missions = new MissionManager(state, world);
 G.missions = missions;
+G.activities = new SideActivities(scene, city, state, world);
+// The empire system joins the world late: missions need world.empire for
+// buyBusiness / turf / prep steps, and the empire needs world.spawnGang.
+const empire = new EmpireSystem(scene, city, state, world);
+world.empire = empire;
+G.empire = empire;
+G.weather = weather;
 G.nextMissionAt = 0;
 
 // ---- UI overlays ----
@@ -176,8 +198,20 @@ function startGame(fromSave) {
       state.health = d.health;
       state.ammo = d.ammo;
       state.reserveAmmo = d.reserveAmmo;
+      state.respect = d.respect ?? 0;
+      // v3 save fields: empire, garage and weapons (v1 saves get defaults
+      // from save.js, so an old save still loads cleanly).
+      if (d.empire) state.empire = d.empire;
+      if (d.garage) state.garage = d.garage;
+      if (d.weapon) { state.weapon = d.weapon; combat.weapon = d.weapon; }
+      if (d.weaponAmmo) { state.weaponAmmo = d.weaponAmmo; combat.weaponAmmo = d.weaponAmmo; }
+      state.deliveriesDone = d.deliveriesDone || 0;
+      state.flags.coinsTaken = d.coinsTaken || [];
+      // Old saves predate the side-job stats; keep the new defaults and
+      // layer the saved numbers on top instead of wiping them.
+      Object.assign(state.stats, d.stats || {});
       state.missionsDone = d.missionsDone;
-      state.stats = d.stats || state.stats;
+      G.activities.syncCoinsFromSave();
       if (d.player) {
         player.pos.set(d.player.x, 0, d.player.z);
         player.heading = d.player.heading;
@@ -191,7 +225,7 @@ function startGame(fromSave) {
   state.mode = 'playing';
   hideOverlays();
   if (!fromSave) G.nextMissionAt = state.time + 1.2;
-  hud.banner('VELVET BAY', 'Mara Voss owes Cash $8,000. Time to work.');
+  hud.banner('VELVET BAY', 'Mara Voss owes Cash $10,000. Time to work.');
 }
 
 // ---- crime / damage helpers ----
@@ -276,7 +310,7 @@ function exitCar(silent) {
 function updatePlayer(dt) {
   const mv = input.moveVector();
   if (player.onFoot) {
-    const sprint = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
+    const sprint = input.isDownAny(['ShiftLeft', 'ShiftRight']);
     const speed = sprint ? 7.6 : 4.4;
     // Mouse look.
     player.camYaw -= input.mouseDX * 0.0032;
@@ -327,6 +361,17 @@ function updatePlayer(dt) {
     player.mesh.position.copy(player.pos);
     player.mesh.rotation.y = player.heading;
 
+    // Weapon swap (1 pistol / 2 shotgun / 3 SMG) — shotgun and SMG need
+    // ammo from their crates, and the HUD shows the active weapon.
+    if (input.wasPressed('Digit1')) { setWeapon(state, 'pistol'); combat.setWeapon('pistol', state); hud.toast('Pistol'); }
+    if (input.wasPressed('Digit2')) {
+      if (combat.setWeapon('shotgun', state)) hud.toast('Shotgun — ' + (state.weaponAmmo.shotgun || 0) + ' shells');
+      else hud.toast('No shotgun yet — find its blue crate');
+    }
+    if (input.wasPressed('Digit3')) {
+      if (combat.setWeapon('smg', state)) hud.toast('SMG — ' + (state.weaponAmmo.smg || 0) + ' rounds');
+      else hud.toast('No SMG yet — find its blue crate');
+    }
     // Punch.
     player.punchTimer -= dt;
     if (input.wasPressed('KeyF') && player.punchTimer <= 0) {
@@ -346,9 +391,12 @@ function updatePlayer(dt) {
       }
     }
     if ((input.mousePressed || input.mouseDown) && player.shootCooldown <= 0 && player.reloadTimer <= 0) {
-      if (state.ammo > 0) {
-        player.shootCooldown = 0.18;
-        state.ammo--;
+      const spec = WEAPONS[state.weapon] || WEAPONS.pistol;
+      const poolAmmo = state.weapon === 'pistol' ? state.ammo : (state.weaponAmmo[state.weapon] || 0);
+      if (poolAmmo > 0) {
+        player.shootCooldown = spec.cooldown;
+        if (state.weapon === 'pistol') state.ammo--;
+        else { state.weaponAmmo[state.weapon]--; combat.weaponAmmo[state.weapon] = state.weaponAmmo[state.weapon]; }
         state.stats.shotsFired++;
         const dir = new THREE.Vector3();
         camera.getWorldDirection(dir);
@@ -366,16 +414,18 @@ function updatePlayer(dt) {
           addMoney(state, 50);
           hud.toast('+$50 dropped cash');
         }
-        if (state.ammo === 0 && state.reserveAmmo > 0) {
+        if (state.weapon === 'pistol' && state.ammo === 0 && state.reserveAmmo > 0) {
           player.reloadTimer = 1.2;
           audio.reload();
         }
-      } else if (state.reserveAmmo > 0) {
+      } else if (state.weapon === 'pistol' && state.reserveAmmo > 0) {
         player.reloadTimer = 1.2;
         audio.reload();
+      } else if (state.weapon !== 'pistol') {
+        hud.toast('Out of ' + state.weapon + ' ammo — find a blue crate');
       }
     }
-    if (input.wasPressed('KeyR') && state.ammo < 12 && state.reserveAmmo > 0 && player.reloadTimer <= 0) {
+    if (input.wasPressed('KeyR') && state.weapon === 'pistol' && state.ammo < 12 && state.reserveAmmo > 0 && player.reloadTimer <= 0) {
       player.reloadTimer = 1.2;
       audio.reload();
     }
@@ -395,7 +445,11 @@ function updatePlayer(dt) {
     }
     player.pos.set(car.x, 0, car.z);
     player.heading = car.heading;
-    audio.engine(Math.abs(car.speed) / 46, true);
+    // Horn: H honks and makes nearby pedestrians step out of the road.
+    if (input.wasPressed('KeyH')) {
+      audio.horn();
+      peds.startle(car.x, car.z);
+    }
   }
 
   // Interact / enter-exit (E).
@@ -405,10 +459,60 @@ function updatePlayer(dt) {
     } else {
       const didMission = missions.tryInteract(player.pos);
       if (!didMission) {
-        const car = traffic.nearestCar(player.pos.x, player.pos.z, 4.5);
-        if (car) enterCar(car);
+        // Side jobs take the press next (taxi fare, race gate, deliveries),
+        // then the empire (fronts, turf flags, heist prep), then cars.
+        const didSideJob = G.activities.tryInteract(player.pos);
+        if (!didSideJob) {
+          const didEmpire = G.empire.tryInteract(player.pos);
+          if (!didEmpire) {
+            const car = traffic.nearestCar(player.pos.x, player.pos.z, 4.5);
+            if (car) enterCar(car);
+          }
+        }
       }
     }
+  }
+
+  // Bribe (B): $300 buys one wanted star down, if Mara can pay. It works
+  // on foot and behind the wheel — a cop at the window takes cash either way.
+  if (input.wasPressed('KeyB')) {
+    if (payBribe(state)) { hud.toast('Bribe paid — one star down'); audio.blip(); }
+    else hud.toast(state.wanted <= 0 ? 'No heat to buy off' : 'Bribe costs $300');
+  }
+
+  // Garage (G): in a car at Cash's Garage, buy the next upgrade in line —
+  // engine tune, armour, nitro tank, fresh paint, then the race engine.
+  // The garage sits at a block centre, so the 22 m reach covers the
+  // building's edge the car is pushed to.
+  if (input.wasPressed('KeyG') && !player.onFoot && player.car) {
+    const d = dist2d(player.pos.x, player.pos.z, 87, -87);
+    if (d <= 22) {
+      const order = ['engine1', 'armor', 'nitro', 'paint', 'engine2'];
+      let bought = null;
+      for (const key of order) {
+        if (upgradeCost(key, state) > 0 && state.money >= upgradeCost(key, state)) {
+          if (applyGarageUpgrade(player.car, key, state)) { bought = key; break; }
+        }
+      }
+      if (bought) {
+        audio.wrench();
+        hud.banner('GARAGE — ' + GARAGE_UPGRADES[bought].label.toUpperCase(), 'Cash fitted it while you waited.');
+      } else {
+        hud.toast('Nothing affordable here — earn more, Mara');
+      }
+    } else {
+      hud.toast('Garage work happens at Cash\u2019s Garage');
+    }
+  }
+
+  // Turf check (T): a one-line readout of where Mara stands in the bay.
+  if (input.wasPressed('KeyT')) {
+    const here = districtAt(player.pos.x, player.pos.z);
+    const held = turfHeld(state);
+    hud.banner(
+      here ? here.name.toUpperCase() + ' — ' + (state.empire.turf[here.id] === 'mara' ? 'YOURS' : 'VIPERS TURF') : 'OPEN ROAD',
+      'Districts held ' + held + '/5  •  Fronts ' + (state.empire.businesses || []).length + '/3  •  Income $' + (G.empire ? G.empire.incomePerTick : 0) + '/45s',
+    );
   }
 
   // Health regen.
@@ -445,11 +549,22 @@ function updateCamera(dt) {
 }
 
 function updateBeacon() {
-  const obj = missions.objective();
+  // Story objective first; a side job (fare, race, delivery) takes the
+  // beacon when no story mission has a marker, then the empire (turf war
+  // or a front Mara can afford).
+  let obj = missions.objective();
+  if (!obj.marker && G.activities) {
+    const aObj = G.activities.objective();
+    if (aObj.marker) obj = aObj;
+  }
+  if (!obj.marker && G.empire) {
+    const eObj = G.empire.objective();
+    if (eObj.marker) obj = eObj;
+  }
   if (obj.marker && state.mode === 'playing') {
     beacon.visible = true;
     ring.visible = true;
-    beacon.position.set(obj.marker.x, 30, obj.marker.z);
+    beacon.position.set(obj.marker.x, 60, obj.marker.z);
     ring.position.set(obj.marker.x, 0.25, obj.marker.z);
     const pulse = 0.2 + Math.sin(performance.now() / 300) * 0.1;
     beaconMat.opacity = pulse;
@@ -467,12 +582,21 @@ function updatePrompt() {
     return;
   }
   const s = missions.step;
-  if (s && (s.type === 'interact' || s.type === 'collect') && s.marker) {
+  if (s && (s.type === 'interact' || s.type === 'collect' || s.type === 'prep') && s.marker) {
     const d = dist2d(player.pos.x, player.pos.z, s.marker.x, s.marker.z);
-    if (d <= s.radius + 2) {
+    if (d <= s.radius + 10) {
       hud.prompt(s.prompt || 'Press E');
       return;
     }
+  }
+  // Side-job prompts: waiting fare customer and the race gate.
+  if (G.activities.fareCustomer && dist2d(player.pos.x, player.pos.z, G.activities.fareCustomer.x, G.activities.fareCustomer.z) <= 4.5) {
+    hud.prompt('Press E to take the taxi fare');
+    return;
+  }
+  if (!G.activities.race && dist2d(player.pos.x, player.pos.z, 58, -58) <= 6) {
+    hud.prompt('Press E to start the street race');
+    return;
   }
   const car = traffic.nearestCar(player.pos.x, player.pos.z, 4.5);
   if (car) {
@@ -501,12 +625,21 @@ function animate() {
     city.update(dt);
   } else if (state.mode === 'playing') {
     state.time += dt;
-    state.clock = (state.clock + dt * 0.5) % (24 * 60);
+    state.clock = (state.clock + dt * 1.2) % (24 * 60);
     if (input.wasPressed('Escape') || input.wasPressed('KeyP')) {
       state.mode = 'paused';
       showOverlay('pause');
       audio.setSiren(false);
       audio.engine(0, false);
+      const ps = document.getElementById('pause-stats');
+      if (ps) {
+        ps.textContent = 'Jobs done ' + state.missionsDone + ' / ' + MISSIONS.length + '  •  Debt left $' + state.debt.toLocaleString('en-US')
+          + '  •  ' + phaseName(state.clock) + (weather.rain > 0.05 ? ' (' + rainLabel(weather.rain) + ')' : '') + ', ' + state.respect + ' respect'
+          + '  •  Coins ' + state.stats.coinsCollected + '/12  •  Fares ' + state.stats.taxiFares
+          + '  •  Races won ' + state.stats.racesWon + '  •  Cars stolen ' + state.stats.carsStolen
+          + '  •  Fronts ' + (state.empire.businesses || []).length + '/3  •  Turf ' + turfHeld(state) + '/5'
+          + '  •  Deliveries ' + (state.deliveriesDone || 0) + '  •  Front income $' + (state.empire.incomeEarned || 0);
+      }
     } else {
       updatePlayer(dt);
       missions.setPlayerPos(player.pos.x, player.pos.z);
@@ -515,6 +648,17 @@ function animate() {
         inCar: !player.onFoot,
         car: player.car,
       });
+      G.activities.update(dt, { playerPos: player.pos, inCar: !player.onFoot });
+      G.empire.update(dt, { playerPos: player.pos, enemiesAlive: combat.enemies.filter((e) => e.state === 'alive').length });
+      combat.updateWeaponCrates(dt, player.pos, state, (msg) => { hud.toast(msg); audio.pickup(); });
+      // A witness finished their phone call: the heat jumps after a delay.
+      if (peds.policeCalled) {
+        peds.policeCalled = false;
+        wanted.reportWitness();
+        state.stats.witnessesDodged = (state.stats.witnessesDodged || 0) + 1;
+        hud.toast('A witness called the cops!');
+      }
+      weather.update(dt, state.clock);
       traffic.update(dt, player.pos, state.wanted > 0 ? player.pos : null);
       peds.update(dt, player.pos, player.onFoot ? player.speed : (player.car ? Math.abs(player.car.speed) : 0));
       const grabbing = peds.updateOfficers(dt, player.pos);
@@ -526,6 +670,10 @@ function animate() {
         onBusted,
       });
       combat.update(dt, player.pos, (dmg) => damagePlayer(dmg));
+      combat.updatePickups(dt, player.pos, state, (kind) => {
+        hud.toast(kind === 'health' ? '+40 HP' : '+24 ammo');
+        audio.pickup();
+      });
       city.update(dt);
       updateCamera(dt);
       updateBeacon();
@@ -567,6 +715,8 @@ window.addEventListener('resize', () => {
 // ---- debug hooks for playtest + screenshots ----
 window.VB = {
   G, state, player, missions, wanted, traffic, peds, combat,
+  empire: G.empire,
+  activities: G.activities, weather,
   start: () => startGame(false),
   teleport: (x, z) => {
     if (player.car) exitCar(true);
@@ -581,11 +731,33 @@ window.VB = {
     enterCar(car);
     return car;
   },
+  giveSport: () => {
+    const car = makeCar(0xd8b13a, 'traffic', player.pos.x + 4, player.pos.z + 2, player.heading, 'sport');
+    car.speed = 0;
+    traffic.scene.add(car.mesh);
+    traffic.cars.push(car);
+    enterCar(car);
+    return car;
+  },
   startMission: (i) => missions.start(i),
   completeStep: () => missions.completeStep(),
   setWanted: (n) => wanted.setWanted(n),
   setHealth: (n) => { state.health = n; },
   spawnGang: (x, z, n) => combat.spawnGang(x, z, n),
+  startRace: () => { G.activities._startRace(); },
+  startDelivery: () => { G.activities._startDelivery(); },
+  buyFront: (id) => {
+    const b = BUSINESSES.find((x) => x.id === id) || BUSINESSES[0];
+    state.money = Math.max(state.money, b.price);
+    player.pos.set(b.x, 0, b.z);
+    return G.empire.tryInteract(player.pos);
+  },
+  takeTurf: (id) => {
+    const d = TURF_DISTRICTS.find((x) => x.id === id) || TURF_DISTRICTS[0];
+    player.pos.set(d.x, 0, d.z);
+    return G.empire.tryInteract(player.pos);
+  },
+  setWeapon: (name) => combat.setWeapon(name, state),
   save: () => saveGame(state, player),
   autoDrive: (on) => { G.debugAuto = on; },
 };
@@ -605,7 +777,7 @@ function applyShotSetup() {
     player.pos.set(0, 0, -116);
     player.heading = 0;
     player.camYaw = 0;
-    window.VB.giveCar();
+    window.VB.giveSport();
     G.debugAuto = true;
   } else if (SHOT === 'chase') {
     player.pos.set(0, 0, -58);
@@ -613,7 +785,7 @@ function applyShotSetup() {
     player.camYaw = Math.PI;
     window.VB.giveCar();
     G.debugAuto = true;
-    wanted.setWanted(3);
+    wanted.setWanted(4);
     // Stage two police cars ahead and to the sides so the chase reads on
     // camera (the chase cam looks forward; pursuit cars behind it are unseen).
     const cops = traffic.cars.filter((c) => c.kind === 'police');
@@ -626,13 +798,13 @@ function applyShotSetup() {
       pc.speed = 12;
     });
   } else if (SHOT === 'mission') {
+    // The Strip Heist: gold sportscar, gang muscle and the beacon, all in
+    // frame — the player stands on the avenue south of the Strip, facing it.
     missions.start(4);
-    // On the road west of the bank, facing due east so the bank + beacon
-    // are centred in frame (player on a road, not inside a block).
-    player.pos.set(-58, 0, -29);
-    player.heading = Math.PI / 2;
-    player.camYaw = Math.PI / 2;
-    combat.spawnGang(-45, -29, 2);
+    player.pos.set(58, 0, 150);
+    player.heading = 2.93;
+    player.camYaw = 2.93;
+    combat.spawnGang(70, 128, 2);
   }
   // title: stay on the menu; nothing to do.
 }

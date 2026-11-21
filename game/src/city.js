@@ -17,6 +17,25 @@ export const CITY = {
   docksX: 252,
 };
 
+// v3 turf districts: name, centre and radius. districtAt() is what the
+// empire, the wanted system and the HUD ask to know where Mara stands.
+export const DISTRICTS = [
+  { id: 'downtown', name: 'Downtown', x: 0, z: 0, r: 85 },
+  { id: 'strip', name: 'The Strip', x: 64, z: 122, r: 70 },
+  { id: 'docks', name: 'Docks 7', x: 262, z: 60, r: 70 },
+  { id: 'beach', name: 'Beachfront', x: 0, z: 232, r: 80 },
+  { id: 'heights', name: 'The Heights', x: -203, z: -203, r: 80 },
+];
+
+export function districtAt(x, z) {
+  let best = null, bestD = 1e9;
+  for (const d of DISTRICTS) {
+    const dd = Math.hypot(x - d.x, z - d.z);
+    if (dd < d.r && dd < bestD) { best = d; bestD = dd; }
+  }
+  return best;
+}
+
 function makeWindowTexture() {
   const c = document.createElement('canvas');
   c.width = 128; c.height = 256;
@@ -279,6 +298,73 @@ export function buildCity(scene) {
     group.add(box(2.4, 1.4, 4, 0x2a2f33, bx, 2, 291));
   }
 
+  // The Velvet Strip: neon signs along the avenue at (58, 116).
+  addSign('VELVET STRIP', 22, 5.5, 58, 11, 116, Math.PI / 2, { fg: '#ff5ce1' });
+  addSign('NEON PALMS', 16, 4, 116, 8, 58, -Math.PI / 2, { fg: '#7dff9a' });
+  addSign('BAY ARENA', 20, 5, 203, 12, 203, -Math.PI / 4, { fg: '#ffd34d' });
+
+  // Bay Arena stadium on the south-east block: green pitch, stands, floodlights.
+  const stadium = new THREE.Group();
+  const pitch = box(46, 0.4, 30, 0x4a8a3a, 203, 0.2, 203);
+  stadium.add(pitch);
+  for (const [sx, sz, w, d] of [[203, 184, 50, 6], [203, 222, 50, 6], [176, 203, 6, 44], [230, 203, 6, 44]]) {
+    stadium.add(box(w, 9, d, 0xd8d4c8, sx, 4.5, sz));
+  }
+  for (const [fx, fz] of [[178, 178], [228, 178], [178, 228], [228, 228]]) {
+    stadium.add(box(1, 22, 1, 0x3a3f45, fx, 11, fz));
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(4, 1.5, 1.5),
+      new THREE.MeshLambertMaterial({ color: 0xfff2b0, emissive: 0xaa8833 }));
+    lamp.position.set(fx, 22.5, fz);
+    stadium.add(lamp);
+  }
+  group.add(stadium);
+  colliders.push(
+    { minX: 178, maxX: 228, minZ: 181, maxZ: 187 },
+    { minX: 178, maxX: 228, minZ: 219, maxZ: 225 },
+    { minX: 173, maxX: 179, minZ: 181, maxZ: 225 },
+    { minX: 227, maxX: 233, minZ: 181, maxZ: 225 },
+  );
+
+  // Ferris wheel on the pier: two legs, a turning rim with cabins.
+  const wheelGroup = new THREE.Group();
+  const rimMat = new THREE.MeshLambertMaterial({ color: 0xd8b13a });
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(14, 0.5, 8, 28), rimMat);
+  rim.position.y = 18;
+  wheelGroup.add(rim);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 2, 10), rimMat);
+  hub.rotation.x = Math.PI / 2;
+  hub.position.y = 18;
+  wheelGroup.add(hub);
+  const cabinMat = new THREE.MeshLambertMaterial({ color: 0xff5ce1 });
+  const cabins = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.4, 2.4), cabinMat);
+    cabin.position.set(Math.cos(a) * 14, 18 + Math.sin(a) * 14, 0);
+    wheelGroup.add(cabin);
+    cabins.push({ mesh: cabin, angle: a });
+  }
+  for (const s of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 19, 6), lampMat);
+    leg.position.set(0, 9, s * 3);
+    leg.rotation.x = s * 0.28;
+    wheelGroup.add(leg);
+  }
+  wheelGroup.position.set(-160, 0, 264);
+  group.add(wheelGroup);
+
+  // Beach umbrellas along the sand.
+  for (let k = 0; k < 8; k++) {
+    const ux = -200 + k * 55;
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.6, 6), lampMat);
+    pole.position.set(ux, 1.3, 258);
+    group.add(pole);
+    const shade = new THREE.Mesh(new THREE.ConeGeometry(2.6, 1.1, 8),
+      new THREE.MeshLambertMaterial({ color: [0xff5c5c, 0x5c9dff, 0xffd34d, 0x7dff9a][k % 4] }));
+    shade.position.set(ux, 3.0, 258);
+    group.add(shade);
+  }
+
   // ---- queries ----
   function isRoad(x, z) {
     for (const line of CITY.lines) {
@@ -341,6 +427,15 @@ export function buildCity(scene) {
   function update(dt) {
     elapsed += dt;
     water.position.y = 0.1 + Math.sin(elapsed * 0.7) * 0.08;
+    // The ferris wheel turns slowly, cabins staying upright. Cabin positions
+    // are relative to wheelGroup (which sits at -160, 0, 264).
+    const wSpeed = dt * 0.12;
+    rim.rotation.z += wSpeed;
+    for (const c of cabins) {
+      c.angle += wSpeed;
+      c.mesh.position.set(Math.cos(c.angle) * 14, 18 + Math.sin(c.angle) * 14, 0);
+      c.mesh.rotation.z = 0;
+    }
     const phase = Math.floor(elapsed / 6) % 3; // 0 green, 1 yellow, 2 red
     for (const tl of trafficLights) {
       tl.green.material.emissiveIntensity = phase === 0 ? 1.2 : 0.08;
@@ -350,9 +445,72 @@ export function buildCity(scene) {
   }
 
   return {
-    group, colliders, update,
+    group, colliders, update, sun, hemi, water,
     isRoad, isWater, isOffGround, nearestRoadPoint, randomRoadPoint, collideCircle,
   };
+}
+
+// v3: The Heights, a new quarter in the north-west corner around the
+// safehouse — hillside villas, a lookout over the bay, the Vipers' home
+// turf and Mara's turf-war flag. Called once by main.js after buildCity;
+// its buildings push into the same colliders array, so cars and peds
+// collide with them exactly like the downtown blocks.
+export function buildHeightsQuarter(scene, city) {
+  const rng = mulberry32(20261121);
+  const group = new THREE.Group();
+  scene.add(group);
+  const addVilla = (x, z, w, h, d, color) => {
+    const villa = new THREE.Mesh(
+      new THREE.BoxGeometry(w, h, d),
+      new THREE.MeshLambertMaterial({ color }),
+    );
+    villa.position.set(x, h / 2, z);
+    group.add(villa);
+    city.colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
+    const roof = new THREE.Mesh(
+      new THREE.ConeGeometry(Math.max(w, d) * 0.75, 3.5, 4),
+      new THREE.MeshLambertMaterial({ color: 0x8a4a2a }),
+    );
+    roof.position.set(x, h + 1.7, z);
+    roof.rotation.y = Math.PI / 4;
+    group.add(roof);
+    return villa;
+  };
+  const palette = [0xe8d8b8, 0xd8c9a8, 0xc9b8a3, 0xe0d4c0];
+  // Villas sit on a grid kept clear of the safehouse itself (-203, -203):
+  // the nearest villa stands ~18 m off, so the safehouse marker stays
+  // reachable on foot for the escape steps that end there.
+  for (let i = 0; i < 6; i++) {
+    const x = -240 + (i % 3) * 24 + (rng() - 0.5) * 8;
+    const z = -240 + Math.floor(i / 3) * 24 + (rng() - 0.5) * 8;
+    addVilla(x, z, 15 + rng() * 6, 8 + rng() * 7, 14 + rng() * 5, palette[i % palette.length]);
+  }
+  // Lookout platform over the bay, with a railing of low boxes.
+  const deck = new THREE.Mesh(
+    new THREE.BoxGeometry(24, 1, 12),
+    new THREE.MeshLambertMaterial({ color: 0x8f8d84 }),
+  );
+  deck.position.set(-203, 0.5, -232);
+  group.add(deck);
+  for (let i = 0; i < 5; i++) {
+    const rail = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1.2, 1),
+      new THREE.MeshLambertMaterial({ color: 0x6a6a66 }),
+    );
+    rail.position.set(-213 + i * 5, 1.6, -237);
+    group.add(rail);
+  }
+  // Hillside palms and a neon sign for the quarter.
+  for (let i = 0; i < 8; i++) {
+    group.add(makePalm(-240 + rng() * 70, -240 + rng() * 60, rng));
+  }
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(26, 4),
+    new THREE.MeshBasicMaterial({ map: makeTextTexture('THE HEIGHTS', { fg: '#ffd34d', font: 'bold 44px Arial' }), transparent: true }),
+  );
+  sign.position.set(-203, 9, -226);
+  group.add(sign);
+  return group;
 }
 
 function makePalm(x, z, rng) {

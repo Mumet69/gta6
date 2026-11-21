@@ -19,7 +19,10 @@ export class Input {
       this.down.add(e.code);
       this.pressed.add(e.code);
       this.anyKey = true;
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) {
+      // v3 action keys must not scroll the page either: 1/2/3 swap weapons,
+      // B pays a bribe, G works the garage, T checks turf from anywhere.
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab',
+        'Digit1', 'Digit2', 'Digit3', 'KeyB', 'KeyG', 'KeyT'].includes(e.code)) {
         e.preventDefault();
       }
     });
@@ -59,8 +62,27 @@ export class Input {
     return this.down.has(code);
   }
 
+  // True when any of the given codes is held (sprint / nitro share Shift).
+  isDownAny(codes) {
+    for (const c of codes) if (this.down.has(c)) return true;
+    return false;
+  }
+
   wasPressed(code) {
     return this.pressed.has(code);
+  }
+
+  // True when any of the given codes fired this frame (weapon keys, menus).
+  wasPressedAny(codes) {
+    for (const c of codes) if (this.pressed.has(c)) return true;
+    return false;
+  }
+
+  // Consume a press so two systems never both answer the same key.
+  consume(code) {
+    const hit = this.pressed.has(code);
+    if (hit) this.pressed.delete(code);
+    return hit;
   }
 
   // Call once per frame after the game has read the input.

@@ -5,12 +5,14 @@
 
 import { moneyStr, formatClock, clamp } from './utils.js';
 import { CITY } from './city.js';
+import { respectRank } from './state.js';
 
 export class HUD {
   constructor() {
     this.el = (id) => document.getElementById(id);
     this.money = this.el('hud-money');
     this.debt = this.el('hud-debt');
+    this.side = this.el('hud-side');
     this.healthFill = this.el('hud-health-fill');
     this.healthText = this.el('hud-health-text');
     this.stars = this.el('hud-stars');
@@ -75,6 +77,24 @@ export class HUD {
     if (this.frame % 4 === 0) {
       if (this.money) this.money.textContent = moneyStr(s.money);
       if (this.debt) this.debt.textContent = 'DEBT ' + moneyStr(s.debt);
+      // Street reputation + side-job progress, one line under the debt.
+      if (this.side) {
+        this.side.textContent = respectRank(s.respect) + ' ★' + s.respect
+          + '  •  COINS ' + s.stats.coinsCollected + '/12'
+          + '  •  TAXI ' + s.stats.taxiFares
+          + '  •  RACES ' + s.stats.racesWon
+          + '  •  FRONTS ' + (s.empire.businesses || []).length + '/3'
+          + '  •  TURF ' + Object.values(s.empire.turf || {}).filter((o) => o === 'mara').length + '/5';
+      }
+      // Empire + weapon line, under the side line when the element exists.
+      const empireEl = this.el('hud-empire');
+      if (empireEl) {
+        const prep = Object.values(s.empire.prep || {}).filter(Boolean).length;
+        empireEl.textContent = 'FRONTS $' + (G.empire ? G.empire.incomePerTick : 0) + '/45s'
+          + '  •  DELIVERIES ' + (s.deliveriesDone || 0)
+          + '  •  HEIST PREP ' + prep + '/3'
+          + '  •  ' + (s.weapon || 'pistol').toUpperCase();
+      }
       if (this.healthFill) this.healthFill.style.width = clamp(s.health, 0, 100) + '%';
       if (this.healthText) this.healthText.textContent = Math.ceil(s.health) + ' HP';
       if (this.stars) {
@@ -84,13 +104,30 @@ export class HUD {
         this.stars.classList.toggle('hot', s.wanted > 0);
       }
       if (this.clockEl) this.clockEl.textContent = formatClock(s.clock);
-      if (this.ammo) this.ammo.textContent = s.ammo + ' / ' + s.reserveAmmo;
+      if (this.ammo) {
+        const w = s.weapon || 'pistol';
+        const wAmmo = w === 'pistol' ? s.ammo + ' / ' + s.reserveAmmo
+          : (s.weaponAmmo[w] || 0) + ' ' + w.toUpperCase();
+        this.ammo.textContent = wAmmo;
+      }
       if (this.speed) {
         this.speed.textContent = !G.player.onFoot && G.player.car
           ? Math.round(Math.abs(G.player.car.speed) * 3.6) + ' km/h'
           : '';
       }
-      const obj = G.missions.objective();
+      const mObj = G.missions.objective();
+      // When no story mission has a marker, the beacon falls back to the
+      // active side job (fare, race checkpoint, waiting customer), then to
+      // the empire (turf war or a front Mara can afford).
+      let obj = mObj;
+      if (!mObj.marker && G.activities) {
+        const aObj = G.activities.objective();
+        if (aObj.marker) obj = aObj;
+      }
+      if (!obj.marker && G.empire) {
+        const eObj = G.empire.objective();
+        if (eObj.marker) obj = eObj;
+      }
       if (this.objective) this.objective.textContent = obj.text;
       if (this.objDist) {
         this.objDist.textContent = obj.marker
@@ -147,7 +184,27 @@ export class HUD {
       ctx.fillRect(bx, by, (c.maxX - c.minX) * scale, (c.maxZ - c.minZ) * scale);
     }
     // Mission marker.
-    const obj = G.missions.objective();
+    const mObj = G.missions.objective();
+    let obj = mObj;
+    if (!mObj.marker && G.activities) {
+      const aObj = G.activities.objective();
+      if (aObj.marker) obj = aObj;
+    }
+    if (!obj.marker && G.empire) {
+      const eObj = G.empire.objective();
+      if (eObj.marker) obj = eObj;
+    }
+    // Empire markers on the map: fronts green, turf flags purple (green
+    // once Mara holds them), heist prep blue.
+    if (G.empire) {
+      for (const b of G.empire.markers || []) {
+        if (b.kind !== 'business' && b.kind !== 'turf') continue;
+        const [mx, my] = toMap(b.mesh.position.x, b.mesh.position.z);
+        if (mx < 0 || mx > W || my < 0 || my > H) continue;
+        ctx.fillStyle = b.kind === 'business' ? '#37d67a' : (G.state.empire.turf[b.id] === 'mara' ? '#37d67a' : '#b44ad8');
+        ctx.fillRect(mx - 3, my - 3, 6, 6);
+      }
+    }
     if (obj.marker) {
       const [mx, my] = toMap(obj.marker.x, obj.marker.z);
       const pulse = 5 + Math.sin(performance.now() / 250) * 2;
@@ -171,6 +228,34 @@ export class HUD {
       ctx.beginPath();
       ctx.arc(cx, cy, 3, 0, Math.PI * 2);
       ctx.fill();
+    }
+    // Sunset Coins (gold dots), waiting fare customer (yellow square) and
+    // race gate (white square) — the side jobs are on the map too.
+    if (G.activities) {
+      ctx.fillStyle = '#ffd34d';
+      for (const coin of G.activities.coins) {
+        const [cx, cy] = toMap(coin.x, coin.z);
+        if (cx < 0 || cx > W || cy < 0 || cy > H) continue;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (G.activities.fareCustomer) {
+        const [fx, fy] = toMap(G.activities.fareCustomer.x, G.activities.fareCustomer.z);
+        ctx.fillRect(fx - 3, fy - 3, 6, 6);
+      }
+      const [rx, ry] = toMap(58, -58);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(rx - 3, ry - 3, 6, 6);
+    }
+    // Police helicopter overhead (red ring) when it is up.
+    if (G.wanted && G.wanted.heli) {
+      const [hx, hy] = toMap(G.wanted.heli.position.x, G.wanted.heli.position.z);
+      ctx.strokeStyle = '#ff2a22';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(hx, hy, 6, 0, Math.PI * 2);
+      ctx.stroke();
     }
     // Player arrow.
     ctx.save();

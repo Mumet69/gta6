@@ -9,6 +9,21 @@ import { makePersonMesh } from './people.js';
 
 const GANG_SHIRTS = [0x8a1f1f, 0x5a1f6e, 0x1f3a5a];
 
+// v3 weapon locker: the pistol is Mara's starter; a shotgun (five pellets,
+// huge close-range damage, slow) and an SMG (fast, light hits, 30-round
+// mag) are found in weapon crates around the city. Damage per pellet/hit.
+export const WEAPONS = {
+  pistol: { damage: 34, cooldown: 0.18, mag: 12, pellets: 1, spread: 0, label: 'Pistol' },
+  shotgun: { damage: 18, cooldown: 0.75, mag: 6, pellets: 5, spread: 0.09, label: 'Shotgun' },
+  smg: { damage: 16, cooldown: 0.07, mag: 30, pellets: 1, spread: 0.03, label: 'SMG' },
+};
+
+export const WEAPON_CRATES = [
+  { x: -116, z: 174, weapon: 'shotgun', ammo: 12 },
+  { x: 174, z: 58, weapon: 'smg', ammo: 60 },
+  { x: -29, z: 232, weapon: 'shotgun', ammo: 12 },
+];
+
 export class Combat {
   constructor(scene, audio, city) {
     this.scene = scene;
@@ -20,6 +35,11 @@ export class Combat {
     this.flashTimer = 0;
     this.spark = null;
     this.sparkTimer = 0;
+    this.pickups = []; // health + ammo crates scattered around the city
+    this.weapon = 'pistol';
+    this.weaponAmmo = { shotgun: 0, smg: 0 };
+    this.weaponCrates = [];
+    this._buildWeaponCrates();
     const flashMat = new THREE.MeshBasicMaterial({ color: 0xfff2a0, transparent: true, opacity: 0.9 });
     this.flash = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), flashMat);
     this.flash.visible = false;
@@ -28,6 +48,48 @@ export class Combat {
     this.spark = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), sparkMat);
     this.spark.visible = false;
     this.scene.add(this.spark);
+  }
+
+  // Health (+40 HP, green cross) and ammo (+24 reserve, orange box) crates.
+  // They respawn 45 seconds after being picked up, so the city restocks.
+  spawnPickups() {
+    const spots = [
+      { x: 0, z: 87, kind: 'health' }, { x: -58, z: -29, kind: 'ammo' },
+      { x: 116, z: 116, kind: 'health' }, { x: -174, z: 58, kind: 'ammo' },
+      { x: 58, z: 203, kind: 'health' }, { x: -203, z: -87, kind: 'ammo' },
+      { x: 174, z: -174, kind: 'health' }, { x: -29, z: -145, kind: 'ammo' },
+    ];
+    for (const s of spots) this._addPickup(s.x, s.z, s.kind);
+  }
+
+  _addPickup(x, z, kind) {
+    const color = kind === 'health' ? 0x37d67a : 0xff9d2e;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1.1, 1.1, 1.1),
+      new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.35 }),
+    );
+    mesh.position.set(x, 1.0, z);
+    this.scene.add(mesh);
+    this.pickups.push({ x, z, kind, mesh, respawn: 0, phase: Math.random() * 6 });
+  }
+
+  updatePickups(dt, playerPos, state, onPickup) {
+    for (const p of this.pickups) {
+      if (p.respawn > 0) {
+        p.respawn -= dt;
+        if (p.respawn <= 0) p.mesh.visible = true;
+        continue;
+      }
+      p.mesh.rotation.y += dt * 1.8;
+      p.mesh.position.y = 1.0 + Math.sin(performance.now() / 400 + p.phase) * 0.2;
+      if (dist2d(playerPos.x, playerPos.z, p.x, p.z) <= 3) {
+        if (p.kind === 'health') state.health = Math.min(state.maxHealth, state.health + 40);
+        else state.reserveAmmo += 24;
+        p.mesh.visible = false;
+        p.respawn = 45;
+        if (onPickup) onPickup(p.kind);
+      }
+    }
   }
 
   spawnGang(x, z, n) {
@@ -56,6 +118,51 @@ export class Combat {
   clearEnemies() {
     for (const e of this.enemies) this.scene.remove(e.mesh);
     this.enemies = [];
+  }
+
+  // Switch weapons (keys 1/2/3). Shotgun and SMG need ammo in the locker;
+  // the pistol always works.
+  setWeapon(name, state) {
+    if (!WEAPONS[name]) return false;
+    if (name !== 'pistol' && (this.weaponAmmo[name] || 0) <= 0) return false;
+    this.weapon = name;
+    if (state) state.weapon = name;
+    return true;
+  }
+
+  // A gang shootout: muscle plus a banner, for turf wars and heist holdouts.
+  spawnShootout(x, z, n) {
+    const gang = this.spawnGang(x, z, n);
+    for (const e of gang) e.shootTimer = Math.min(e.shootTimer, 0.5);
+    return gang;
+  }
+
+  _buildWeaponCrates() {
+    for (const c of WEAPON_CRATES) {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1.3, 0.9, 1.3),
+        new THREE.MeshLambertMaterial({ color: 0x2a5aff, emissive: 0x2a5aff, emissiveIntensity: 0.3 }),
+      );
+      mesh.position.set(c.x, 1.0, c.z);
+      this.scene.add(mesh);
+      this.weaponCrates.push({ ...c, mesh, taken: false, phase: Math.random() * 6 });
+    }
+  }
+
+  // Walk over a crate to unlock its weapon and stock its ammo.
+  updateWeaponCrates(dt, playerPos, state, onPickup) {
+    for (const c of this.weaponCrates) {
+      if (c.taken) continue;
+      c.mesh.rotation.y += dt * 1.5;
+      c.mesh.position.y = 1.0 + Math.sin(performance.now() / 400 + c.phase) * 0.2;
+      if (dist2d(playerPos.x, playerPos.z, c.x, c.z) <= 3) {
+        c.taken = true;
+        c.mesh.visible = false;
+        this.weaponAmmo[c.weapon] = (this.weaponAmmo[c.weapon] || 0) + c.ammo;
+        if (state) state.weaponAmmo[c.weapon] = this.weaponAmmo[c.weapon];
+        if (onPickup) onPickup(WEAPONS[c.weapon].label + ' unlocked — +' + c.ammo + ' ammo');
+      }
+    }
   }
 
   // 2D ray: returns { hit: 'enemy'|'ped'|'car'|'wall'|null, point, ref, dist }.
@@ -113,22 +220,35 @@ export class Combat {
   }
 
   shoot(origin, dir, ctx) {
-    const res = this._ray(origin, dir, ctx);
-    // Tracer line from the muzzle to the hit point.
-    const mat = new THREE.LineBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.9 });
-    const geo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(origin.x, origin.y, origin.z),
-      new THREE.Vector3(res.point.x, res.point.y, res.point.z),
-    ]);
-    const line = new THREE.Line(geo, mat);
-    this.scene.add(line);
-    this.tracers.push({ line, life: 0.09 });
+    const spec = WEAPONS[this.weapon] || WEAPONS.pistol;
+    // A shotgun fires five pellets with a spread; other guns fire one ray.
+    let best = null;
+    for (let i = 0; i < spec.pellets; i++) {
+      const jitter = new THREE.Vector3(
+        (Math.random() - 0.5) * spec.spread * 2,
+        (Math.random() - 0.5) * spec.spread,
+        (Math.random() - 0.5) * spec.spread * 2,
+      );
+      const d = dir.clone().add(jitter).normalize();
+      const res = this._ray(origin, d, ctx);
+      if (!best || res.dist < best.dist) best = res;
+      const mat = new THREE.LineBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.9 });
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(origin.x, origin.y, origin.z),
+        new THREE.Vector3(res.point.x, res.point.y, res.point.z),
+      ]);
+      const line = new THREE.Line(geo, mat);
+      this.scene.add(line);
+      this.tracers.push({ line, life: 0.09 });
+    }
+    const res = best;
     this.spark.position.set(res.point.x, res.point.y, res.point.z);
     this.spark.visible = true;
     this.sparkTimer = 0.08;
     this.audio.shot();
     if (res.hit === 'enemy' && res.ref) {
-      res.ref.health -= 34;
+      // Each pellet lands: a point-blank shotgun burst is five hits.
+      res.ref.health -= spec.damage * spec.pellets;
       if (res.ref.health <= 0) this._killEnemy(res.ref);
       return { ...res, killed: res.ref.health <= 0 };
     }
