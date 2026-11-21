@@ -7,22 +7,132 @@ import { CITY } from './city.js';
 
 const TRAFFIC_COLORS = [0xc23b2e, 0x2e5fc2, 0xd8b13a, 0x3a9a4a, 0xd86a1e, 0x7a4a9a, 0xe8e8e8, 0x9aa0a6, 0x2a9a9a, 0x8a2f4d];
 
-export function makeCarMesh(color, kind = 'traffic') {
+// Seven cars, seven personalities: the sedan is the everyday steal, the
+// sportscar is the fastest thing on the bay, the taxi pays its own way in
+// traffic, and the truck is slow, heavy and hard to push around. New in v3:
+// a muscle car with a hood scoop and a thirst for straight lines, a boxy
+// delivery van that shrugs off bumps, and a long limo that turns like a boat.
+export const CAR_MODELS = {
+  sedan: { topSpeed: 36, accel: 15, label: 'Sedan' },
+  sport: { topSpeed: 46, accel: 20, label: 'Sportscar' },
+  taxi: { topSpeed: 34, accel: 14, label: 'Taxi' },
+  truck: { topSpeed: 26, accel: 10, label: 'Truck' },
+  muscle: { topSpeed: 40, accel: 18, label: 'Muscle car' },
+  van: { topSpeed: 28, accel: 11, label: 'Delivery van' },
+  limo: { topSpeed: 38, accel: 13, label: 'Limo' },
+};
+
+// Garage upgrades, bought at Cash's Garage (key G in the car). Engine tiers
+// add top speed, armour softens crash slowdown, a nitro tank boosts the
+// Shift boost, and paint is paint — the bay notices a fresh coat.
+export const GARAGE_UPGRADES = {
+  engine1: { price: 800, label: 'Engine tune +4 top speed' },
+  engine2: { price: 1800, label: 'Race engine +8 top speed' },
+  armor: { price: 600, label: 'Armour plating — softer crashes' },
+  nitro: { price: 900, label: 'Nitro tank — bigger Shift boost' },
+  paint: { price: 150, label: 'Fresh paint job' },
+};
+
+export function upgradeCost(key, state) {
+  const up = GARAGE_UPGRADES[key];
+  if (!up) return 0;
+  if (key === 'engine2' && (state.garage.engine || 0) < 1) return -1; // needs tune first
+  if (key === 'engine1' && (state.garage.engine || 0) >= 1) return -1;
+  if (key === 'engine2' && (state.garage.engine || 0) >= 2) return -1;
+  if (key === 'armor' && (state.garage.armor || 0) >= 1) return -1;
+  if (key === 'nitro' && (state.garage.nitro || 0) >= 1) return -1;
+  return up.price;
+}
+
+export function applyGarageUpgrade(car, key, state) {
+  const cost = upgradeCost(key, state);
+  if (cost <= 0 || state.money < cost) return false;
+  state.money -= cost;
+  if (key === 'engine1') { state.garage.engine = 1; car.topSpeed += 4; car.accel += 2; }
+  if (key === 'engine2') { state.garage.engine = 2; car.topSpeed += 4; car.accel += 2; }
+  if (key === 'armor') { state.garage.armor = 1; car.armor = true; }
+  if (key === 'nitro') { state.garage.nitro = 1; car.nitroBoost = 14; }
+  if (key === 'paint') {
+    state.garage.paint = (state.garage.paint + 0x2a4a7a) % 0xffffff;
+    paintCar(car, state.garage.paint);
+  }
+  return true;
+}
+
+// Recolour only the body-coloured parts (the meshes whose material matches
+// the car's old colour), so a paint job never dyes the windows, tyres or
+// headlights along with the bodywork.
+export function paintCar(car, color) {
+  const old = car.color;
+  car.color = color;
+  car.mesh.children.forEach((m) => {
+    if (m.material && m.material.color && m.material.color.getHex() === old) {
+      m.material.color.setHex(color);
+    }
+  });
+}
+
+export function makeCarMesh(color, kind = 'traffic', model = 'sedan') {
   const g = new THREE.Group();
   const bodyMat = new THREE.MeshLambertMaterial({ color });
   const darkMat = new THREE.MeshLambertMaterial({ color: 0x15181c });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.0, 2.0), bodyMat);
-  body.position.y = 0.75;
+  const isTruck = model === 'truck';
+  const isSport = model === 'sport';
+  const body = new THREE.Mesh(new THREE.BoxGeometry(isTruck ? 5.2 : 4.4, isTruck ? 1.5 : 1.0, 2.0), bodyMat);
+  body.position.y = isTruck ? 1.1 : isSport ? 0.62 : 0.75;
   g.add(body);
   const nose = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.55, 1.9), bodyMat);
-  nose.position.set(2.4, 0.55, 0);
+  nose.position.set(2.4, isTruck ? 0.9 : 0.55, 0);
   g.add(nose);
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.85, 1.75), darkMat);
-  cabin.position.set(-0.3, 1.55, 0);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(isTruck ? 1.6 : 2.1, isTruck ? 1.1 : 0.85, 1.75), darkMat);
+  cabin.position.set(isTruck ? 1.2 : -0.3, isTruck ? 2.3 : 1.55, 0);
   g.add(cabin);
   const roof = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.12, 1.7), bodyMat);
-  roof.position.set(-0.3, 2.0, 0);
+  roof.position.set(-0.3, isSport ? 1.85 : 2.0, 0);
   g.add(roof);
+  // Sportscar spoiler; taxi roof sign; truck cargo box.
+  if (isSport) {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.1, 1.9), darkMat);
+    wing.position.set(-2.2, 1.25, 0);
+    g.add(wing);
+  }
+  if (model === 'taxi') {
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.5),
+      new THREE.MeshLambertMaterial({ color: 0xffd34d, emissive: 0x664400 }));
+    sign.position.set(-0.3, 2.2, 0);
+    g.add(sign);
+  }
+  if (isTruck) {
+    const cargo = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.8, 2.1),
+      new THREE.MeshLambertMaterial({ color: 0x8a8f96 }));
+    cargo.position.set(-1.2, 1.9, 0);
+    g.add(cargo);
+  }
+  // Muscle car: a long hood scoop and fat rear tyres read. Limo: a stretched
+  // body with a divider window. Van: a tall box body with a sliding door.
+  if (model === 'muscle') {
+    const scoop = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.35, 0.9), darkMat);
+    scoop.position.set(1.2, 1.25, 0);
+    g.add(scoop);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.06, 0.5),
+      new THREE.MeshLambertMaterial({ color: 0x14181c }));
+    stripe.position.set(0, 1.18, 0);
+    g.add(stripe);
+  }
+  if (model === 'limo') {
+    const stretch = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.9, 1.9), bodyMat);
+    stretch.position.set(-0.6, 0.72, 0);
+    g.add(stretch);
+    const divider = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.8, 1.7), darkMat);
+    divider.position.set(-0.6, 1.5, 0);
+    g.add(divider);
+  }
+  if (model === 'van') {
+    const boxBody = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.9, 2.05),
+      new THREE.MeshLambertMaterial({ color: 0xd8d8d8 }));
+    boxBody.position.set(-0.8, 1.7, 0);
+    g.add(boxBody);
+  }
   // Wheels.
   const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.35, 10);
   const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
@@ -58,14 +168,18 @@ export function makeCarMesh(color, kind = 'traffic') {
     g.add(r); g.add(b);
     lightBar = { red, blue, phase: 0 };
   }
-  g.userData = { wheels, lightBar, kind };
+  g.userData = { wheels, lightBar, kind, model };
   return g;
 }
 
-export function makeCar(color, kind, x, z, heading) {
+export function makeCar(color, kind, x, z, heading, model = 'sedan') {
+  const spec = CAR_MODELS[model] || CAR_MODELS.sedan;
   return {
     kind,
-    mesh: makeCarMesh(color, kind),
+    model,
+    topSpeed: spec.topSpeed,
+    accel: spec.accel,
+    mesh: makeCarMesh(color, kind, model),
     x, z, heading,
     speed: 0,
     steer: 0,
@@ -83,8 +197,12 @@ export function drivePlayerCar(car, input, dt, city, trafficCars, peds, onCrash)
   const mv = input.moveVector();
   const nitro = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
   const handbrake = input.isDown('Space');
-  const maxSpeed = nitro ? 46 : 36;
-  if (mv.y > 0) car.speed += (nitro ? 20 : 15) * dt;
+  // A nitro tank from the garage doubles the Shift boost; armour halves the
+  // speed lost when a crash clips a wall (handled where res.hit lands).
+  const boost = nitro ? (car.nitroBoost || 8) : 0;
+  const maxSpeed = (car.topSpeed || 36) + boost;
+  const accel = car.accel || 15;
+  if (mv.y > 0) car.speed += (nitro ? accel + 5 : accel) * dt;
   else if (mv.y < 0) car.speed -= car.speed > 0.5 ? 26 * dt : 10 * dt;
   else car.speed -= Math.sign(car.speed) * Math.min(Math.abs(car.speed), 6 * dt);
   if (handbrake) car.speed -= Math.sign(car.speed) * Math.min(Math.abs(car.speed), 18 * dt);
@@ -103,8 +221,8 @@ export function drivePlayerCar(car, input, dt, city, trafficCars, peds, onCrash)
   nz = clamp(nz, -CITY.half - 20, CITY.waterZ - 3);
   const res = city.collideCircle(nx, nz, 2.3);
   if (res.hit && spd > 4) {
-    car.speed *= 0.45;
-    if (onCrash) onCrash(Math.min(1, spd / 30));
+    car.speed *= car.armor ? 0.7 : 0.45;
+    if (onCrash) onCrash(Math.min(1, spd / 30) * (car.armor ? 0.6 : 1));
   }
   car.x = res.x; car.z = res.z;
   // Bump into traffic cars.
@@ -160,9 +278,27 @@ export class TrafficSystem {
     const p = this.city.randomRoadPoint(Math.random);
     const alongX = Math.abs(p.x - Math.round(p.x / CITY.pitch) * CITY.pitch) < 1;
     const heading = alongX ? (Math.random() < 0.5 ? 0 : Math.PI) : (Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
-    const car = makeCar(choice(TRAFFIC_COLORS), 'traffic', p.x, p.z, heading);
+    // Traffic is a mix: mostly sedans, with taxis, trucks, the odd sportscar
+    // and, since v3, muscle cars, vans and the occasional limo cruising the Strip.
+    const roll = Math.random();
+    const model = roll < 0.13 ? 'taxi' : roll < 0.24 ? 'truck' : roll < 0.33 ? 'sport'
+      : roll < 0.43 ? 'muscle' : roll < 0.52 ? 'van' : roll < 0.57 ? 'limo' : 'sedan';
+    const color = model === 'taxi' ? 0xffd34d : choice(TRAFFIC_COLORS);
+    const car = makeCar(color, 'traffic', p.x, p.z, heading, model);
     car.speed = rand(7, 12);
     car.mesh.position.set(p.x, 0, p.z);
+    car.mesh.rotation.y = heading;
+    this.scene.add(car.mesh);
+    this.cars.push(car);
+    return car;
+  }
+
+  // A parked prize car for a mission (the gold sportscar on the Strip).
+  spawnParked(color, x, z, heading, model = 'sport') {
+    const car = makeCar(color, 'traffic', x, z, heading, model);
+    car.speed = 0;
+    car.parked = true;
+    car.mesh.position.set(x, 0, z);
     car.mesh.rotation.y = heading;
     this.scene.add(car.mesh);
     this.cars.push(car);

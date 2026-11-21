@@ -57,6 +57,7 @@ export class PedSystem {
     this.officers = [];
     this.danger = null; // {x, z} flee-from point, set by gunfire
     this.dangerTimer = 0;
+    this.policeCalled = false; // flips once when a witness finishes a call
   }
 
   spawnInitial(n) {
@@ -74,7 +75,8 @@ export class PedSystem {
       x: p.x, z: p.z,
       heading: rand(0, Math.PI * 2),
       speed: rand(1.1, 1.9),
-      state: 'walk', // walk | flee | down
+      role: 'civilian', // civilian | vendor | rival | gang | witness
+      state: 'walk', // walk | flee | down | guard
       target: null,
       walkPhase: rand(0, 6),
       downTimer: 0,
@@ -84,6 +86,55 @@ export class PedSystem {
     this.scene.add(ped.mesh);
     this.peds.push(ped);
     return ped;
+  }
+
+  // v3 roles: a street vendor with a stall (buys snacks, +5 HP for $20 via
+  // the empire interact in main.js), a rival racer who taunts Mara near the
+  // race gate, and Vipers gang patrols who guard a turf flag and do not
+  // wander off. Roles live on the ped record as ped.role.
+  spawnVendor(x, z) {
+    const ped = this.spawnPed(x, z);
+    ped.role = 'vendor';
+    ped.speed = 0;
+    const stall = new THREE.Mesh(
+      new THREE.BoxGeometry(2.4, 1.1, 1.4),
+      new THREE.MeshLambertMaterial({ color: 0xd87a2e }),
+    );
+    stall.position.set(x + 1.6, 0.55, z);
+    this.scene.add(stall);
+    ped.stall = stall;
+    return ped;
+  }
+
+  spawnRival(x, z) {
+    const ped = this.spawnPed(x, z);
+    ped.role = 'rival';
+    ped.mesh.children[0].material = new THREE.MeshLambertMaterial({ color: 0xc23b2e });
+    ped.target = { x: x + 20, z };
+    return ped;
+  }
+
+  // Gang patrol: n goons who stand guard around a turf flag. They stay
+  // put (state 'guard') until danger, then flee like everyone else.
+  spawnGangPatrol(x, z, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const ped = this.spawnPed(x + (i - n / 2) * 4, z + (i % 2) * 4);
+      ped.role = 'gang';
+      ped.state = 'guard';
+      ped.mesh.children[0].material = new THREE.MeshLambertMaterial({ color: 0x8a1f1f });
+      out.push(ped);
+    }
+    return out;
+  }
+
+  // Mark a ped as a witness: they run for the nearest phone and, after a
+  // few seconds, the call goes through (peds.policeCalled flips once).
+  markWitness(ped) {
+    if (!ped || ped.role === 'witness') return;
+    ped.role = 'witness';
+    ped.callTimer = 5;
+    this.setDanger(ped.x, ped.z);
   }
 
   spawnOfficer(x, z) {
@@ -109,6 +160,18 @@ export class PedSystem {
   setDanger(x, z) {
     this.danger = { x, z };
     this.dangerTimer = 4;
+  }
+
+  // A car horn nearby: peds step away from the road instead of standing in it.
+  startle(x, z) {
+    this.setDanger(x, z);
+    this.dangerTimer = 2;
+  }
+
+  // Remove one pedestrian from the street (used when a fare customer is picked up).
+  removePed(ped) {
+    this.scene.remove(ped.mesh);
+    this.peds = this.peds.filter((p) => p !== ped);
   }
 
   nearestPed(x, z, maxDist) {
@@ -144,6 +207,19 @@ export class PedSystem {
           ped.mesh.position.y = 0;
           ped.target = null;
         }
+        continue;
+      }
+      // Witnesses run and phone it in; guards hold their post.
+      if (ped.role === 'witness' && ped.callTimer !== undefined) {
+        ped.callTimer -= dt;
+        if (ped.callTimer <= 0) {
+          ped.callTimer = undefined;
+          this.policeCalled = true;
+        }
+      }
+      if (ped.state === 'guard' && !danger) {
+        ped.mesh.position.set(ped.x, 0, ped.z);
+        ped.mesh.rotation.y = ped.heading;
         continue;
       }
       // Decide: flee danger or a fast car, else wander.

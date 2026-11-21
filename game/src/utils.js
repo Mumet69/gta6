@@ -55,8 +55,46 @@ export function moneyStr(n) {
   return '$' + v.toLocaleString('en-US');
 }
 
+// Clamp to the 0..1 range, for blends and fades.
+export function clamp01(v) {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+// Smoothstep easing between two edges: 0 below a, 1 above b, curved between.
+export function smoothstep(a, b, x) {
+  const t = clamp01((x - a) / (b - a));
+  return t * t * (3 - 2 * t);
+}
+
 export function pad2(n) {
   return n < 10 ? '0' + n : '' + n;
+}
+
+// Seconds as m:ss — race, fare and holdout timers.
+export function formatDuration(sec) {
+  const s = Math.max(0, Math.ceil(sec));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+// True with probability p (0..1); used for witnesses, storms and drops.
+export function chance(p) {
+  return Math.random() < p;
+}
+
+// Pick one entry, weighted by the given weights (same length as arr).
+export function pickWeighted(arr, weights) {
+  const total = weights.reduce((a, b) => a + b, 0);
+  let roll = Math.random() * total;
+  for (let i = 0; i < arr.length; i++) {
+    roll -= weights[i];
+    if (roll <= 0) return arr[i];
+  }
+  return arr[arr.length - 1];
+}
+
+// Whole dollars with commas, for banners and the pause screen.
+export function fmtInt(n) {
+  return Math.round(n).toLocaleString('en-US');
 }
 
 export function formatClock(totalSeconds) {
