@@ -17,6 +17,7 @@
     text-shadow: 0 2px 4px rgba(0,0,0,.8); }
   #hud-money { font-size: 30px; font-weight: 800; color: #7dff9a; letter-spacing: 1px; }
   #hud-debt { font-size: 15px; font-weight: 700; color: #ff8a7a; letter-spacing: 1px; }
+  #hud-side { font-size: 13px; font-weight: 700; color: #ffd34d; letter-spacing: 1px; text-shadow: 0 2px 4px rgba(0,0,0,.8); }
   #hud-clock { font-size: 14px; color: #cfe3ff; font-weight: 600; }
   #hud-stars { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
     font-size: 30px; letter-spacing: 6px; color: rgba(255,255,255,.35); text-shadow: 0 2px 6px rgba(0,0,0,.9); }
@@ -59,6 +60,7 @@
   #hud-toast.show { opacity: 1; }
   #hud-help { position: absolute; right: 18px; bottom: 88px; font-size: 12px; color: rgba(255,255,255,.75);
     text-align: right; text-shadow: 0 1px 3px #000; line-height: 1.5; }
+  #hud-empire { font-size: 13px; font-weight: 700; color: #9fd8ff; letter-spacing: 1px; text-shadow: 0 2px 4px rgba(0,0,0,.8); }
   /* ---------- Screens ---------- */
   .screen { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
     align-items: center; justify-content: center; text-align: center;
@@ -88,7 +90,9 @@
 <div id="hud" class="hidden">
   <div id="hud-top">
     <div id="hud-money">$250</div>
-    <div id="hud-debt">DEBT $8,000</div>
+    <div id="hud-debt">DEBT $10,000</div>
+    <div id="hud-side">Rookie ★0 • COINS 0/12 • TAXI 0 • RACES 0 • FRONTS 0/3 • TURF 0/5</div>
+    <div id="hud-empire">FRONTS $0/45s • DELIVERIES 0 • HEIST PREP 0/3 • PISTOL</div>
     <div id="hud-clock">08:00</div>
   </div>
   <div id="hud-stars">☆☆☆☆☆</div>
@@ -107,20 +111,24 @@
   </div>
   <div id="hud-ammo">12 / 60</div>
   <div id="hud-speed"></div>
-  <div id="hud-help">WASD move / drive &nbsp;•&nbsp; E enter car &nbsp;•&nbsp; Mouse aim, Click shoot<br>
-    F punch &nbsp;•&nbsp; R reload &nbsp;•&nbsp; Space jump / handbrake &nbsp;•&nbsp; Shift sprint / nitro &nbsp;•&nbsp; P pause</div>
+  <div id="hud-help">WASD move / drive &nbsp;•&nbsp; E enter car / buy / turf / prep &nbsp;•&nbsp; Mouse aim, Click shoot<br>
+    1/2/3 weapons &nbsp;•&nbsp; F punch &nbsp;•&nbsp; R reload &nbsp;•&nbsp; H horn &nbsp;•&nbsp; B bribe $300 &nbsp;•&nbsp; G garage &nbsp;•&nbsp; T turf check<br>
+    Space jump / handbrake &nbsp;•&nbsp; Shift sprint / nitro &nbsp;•&nbsp; P pause</div>
 </div>
 
 <div id="menu-screen" class="screen">
   <h1>VELVET BAY</h1>
   <h2>AN OPEN-WORLD CRIME GAME</h2>
   <p class="story">Sun-soaked Velvet Bay. Mara Voss — ex-street racer, getaway driver — owes
-    fixer Cassius “Cash” Rowe <b>$8,000</b>. Steal cars, outrun the cops, run five jobs
-    and pay the debt — or the bay keeps you.</p>
+    fixer Cassius “Cash” Rowe <b>$10,000</b>. Steal cars, outrun the cops, run eight jobs
+    and pay the debt — or the bay keeps you. Then buy fronts, take turf from the Vipers
+    and plan the Velvet Vault heist. Between jobs: taxi fares, delivery runs, twelve hidden
+    Sunset Coins and a downtown street race.</p>
   <button id="btn-start" class="btn">START ENGINE</button>
   <button id="btn-continue" class="btn secondary hidden">CONTINUE</button>
-  <p class="controls"><b>WASD</b> move / drive &nbsp;•&nbsp; <b>E</b> steal &amp; enter car &nbsp;•&nbsp;
-    <b>Mouse</b> aim, <b>Click</b> shoot &nbsp;•&nbsp; <b>F</b> punch &nbsp;•&nbsp; <b>R</b> reload<br>
+  <p class="controls"><b>WASD</b> move / drive &nbsp;•&nbsp; <b>E</b> steal &amp; enter car, buy fronts, turf wars &nbsp;•&nbsp;
+    <b>Mouse</b> aim, <b>Click</b> shoot &nbsp;•&nbsp; <b>1/2/3</b> pistol / shotgun / SMG &nbsp;•&nbsp; <b>F</b> punch &nbsp;•&nbsp; <b>R</b> reload<br>
+    <b>H</b> horn &nbsp;•&nbsp; <b>B</b> bribe $300 &nbsp;•&nbsp; <b>G</b> garage upgrades at Cash's &nbsp;•&nbsp; <b>T</b> turf check<br>
     <b>Space</b> jump / handbrake &nbsp;•&nbsp; <b>Shift</b> sprint / nitro &nbsp;•&nbsp; <b>P</b> pause &amp; save<br>
     Sound is synthesised live — no audio files. Best in desktop Chrome.</p>
 </div>
@@ -128,6 +136,7 @@
 <div id="pause-screen" class="screen hidden">
   <h1>PAUSED</h1>
   <p class="story">Velvet Bay waits for no one — except right now.</p>
+  <p class="controls" id="pause-stats"></p>
   <button id="btn-resume" class="btn">RESUME</button>
   <button id="btn-save" class="btn secondary">SAVE GAME</button>
   <button id="btn-mute" class="btn secondary">Sound: ON</button>
@@ -149,8 +158,8 @@
 <div id="win-screen" class="screen hidden">
   <h1 class="green">DEBT PAID</h1>
   <h2>VELVET BAY IS YOURS, MARA</h2>
-  <p class="story">Five jobs. $8,000. Cash is paid, the slate is clean — and the city is
-    still full of cars to steal. Free roam is open.</p>
+  <p class="story">Eight jobs. $10,000. Cash is paid, the slate is clean — and the city is
+    still full of cars to steal, fronts to buy and turf to hold. Free roam is open.</p>
   <button id="btn-win" class="btn">KEEP PLAYING</button>
 </div>
 
