@@ -3,166 +3,70 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:,">
-<title>VELVET BAY — an open-world crime game</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0e14;
-    font-family: 'Segoe UI', Arial, sans-serif; color: #f2f2f2; }
-  #game-canvas, #game-canvas canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
-  .hidden { display: none !important; }
-  /* ---------- HUD ---------- */
-  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
-  #hud-top { position: absolute; top: 14px; left: 16px; display: flex; flex-direction: column; gap: 4px;
-    text-shadow: 0 2px 4px rgba(0,0,0,.8); }
-  #hud-money { font-size: 30px; font-weight: 800; color: #7dff9a; letter-spacing: 1px; }
-  #hud-debt { font-size: 15px; font-weight: 700; color: #ff8a7a; letter-spacing: 1px; }
-  #hud-side { font-size: 13px; font-weight: 700; color: #ffd34d; letter-spacing: 1px; text-shadow: 0 2px 4px rgba(0,0,0,.8); }
-  #hud-clock { font-size: 14px; color: #cfe3ff; font-weight: 600; }
-  #hud-stars { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-    font-size: 30px; letter-spacing: 6px; color: rgba(255,255,255,.35); text-shadow: 0 2px 6px rgba(0,0,0,.9); }
-  #hud-stars.hot { color: #ffd34d; }
-  #minimap-wrap { position: absolute; top: 14px; right: 16px; border-radius: 8px; overflow: hidden;
-    box-shadow: 0 0 0 2px rgba(255,255,255,.25), 0 4px 14px rgba(0,0,0,.5); }
-  #minimap { display: none; }
-  #minimap-img { display: block; width: 180px; height: 180px; background: #0d1622; }
-  #hud-health { position: absolute; left: 16px; bottom: 16px; width: 240px; }
-  #hud-health-bar { height: 14px; background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.4); border-radius: 7px; overflow: hidden; }
-  #hud-health-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #37d67a, #7dff9a); }
-  #hud-health-text { font-size: 13px; font-weight: 700; margin-top: 3px; text-shadow: 0 1px 3px #000; }
-  #hud-objective-box { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-    text-align: center; max-width: 560px; }
-  #hud-objective { font-size: 17px; font-weight: 700; text-shadow: 0 2px 4px #000; }
-  #hud-objective-dist { font-size: 14px; color: #ffd34d; font-weight: 700; text-shadow: 0 2px 4px #000; }
-  #hud-speed { position: absolute; right: 18px; bottom: 16px; font-size: 26px; font-weight: 800;
-    text-shadow: 0 2px 4px #000; }
-  #hud-ammo { position: absolute; right: 18px; bottom: 52px; font-size: 15px; font-weight: 700;
-    text-shadow: 0 2px 4px #000; }
-  #crosshair { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px;
-    opacity: .85; }
-  #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #fff;
-    box-shadow: 0 0 3px #000; }
-  #crosshair::before { left: 8px; top: 0; width: 2px; height: 18px; }
-  #crosshair::after { left: 0; top: 8px; width: 18px; height: 2px; }
-  #banner-wrap { position: absolute; top: 22%; left: 50%; transform: translateX(-50%);
-    text-align: center; opacity: 0; transition: opacity .3s; }
-  #banner-wrap.show { opacity: 1; }
-  #hud-banner { font-size: 44px; font-weight: 900; letter-spacing: 3px; color: #ffd34d;
-    text-shadow: 0 3px 0 #7a4a00, 0 6px 18px rgba(0,0,0,.8); }
-  #hud-banner-sub { font-size: 17px; font-weight: 600; margin-top: 4px; text-shadow: 0 2px 4px #000; }
-  #hud-prompt { position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%);
-    font-size: 16px; font-weight: 700; background: rgba(0,0,0,.65); padding: 8px 16px; border-radius: 8px;
-    border: 1px solid rgba(255,211,77,.7); opacity: 0; transition: opacity .2s; }
-  #hud-prompt.show { opacity: 1; }
-  #hud-toast { position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%);
-    font-size: 15px; font-weight: 700; color: #7dff9a; text-shadow: 0 2px 4px #000;
-    opacity: 0; transition: opacity .2s; }
-  #hud-toast.show { opacity: 1; }
-  #hud-help { position: absolute; right: 18px; bottom: 88px; font-size: 12px; color: rgba(255,255,255,.75);
-    text-align: right; text-shadow: 0 1px 3px #000; line-height: 1.5; }
-  #hud-empire { font-size: 13px; font-weight: 700; color: #9fd8ff; letter-spacing: 1px; text-shadow: 0 2px 4px rgba(0,0,0,.8); }
-  /* ---------- Screens ---------- */
-  .screen { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; text-align: center;
-    background: linear-gradient(180deg, rgba(10,14,20,.55) 0%, rgba(10,14,20,.82) 100%); }
-  .screen h1 { font-size: 72px; font-weight: 900; letter-spacing: 6px; color: #ffd34d;
-    text-shadow: 0 4px 0 #7a4a00, 0 10px 30px rgba(0,0,0,.9); }
-  .screen h2 { font-size: 20px; font-weight: 600; color: #9fd8ff; letter-spacing: 4px; margin-top: 2px; }
-  .screen p.story { max-width: 620px; margin: 22px 0 8px; font-size: 17px; line-height: 1.6; color: #e8e8e8; }
-  .screen p.controls { max-width: 620px; font-size: 14px; line-height: 1.9; color: #c8ccd2; margin-top: 10px; }
-  .screen p.controls b { color: #ffd34d; }
-  .btn { pointer-events: auto; cursor: pointer; margin-top: 26px; padding: 14px 42px; font-size: 19px;
-    font-weight: 800; letter-spacing: 2px; color: #101418; background: #ffd34d; border: none;
-    border-radius: 10px; box-shadow: 0 6px 0 #a67c00, 0 10px 24px rgba(0,0,0,.5); }
-  .btn:hover { background: #ffe08a; }
-  .btn.secondary { background: #2a3340; color: #e8e8e8; box-shadow: 0 6px 0 #141a22, 0 10px 24px rgba(0,0,0,.5); }
-  .btn.secondary:hover { background: #3a4658; }
-  .screen h1.red { color: #ff5a4d; text-shadow: 0 4px 0 #6e0d06, 0 10px 30px rgba(0,0,0,.9); }
-  .screen h1.green { color: #7dff9a; text-shadow: 0 4px 0 #0d5a26, 0 10px 30px rgba(0,0,0,.9); }
-</style>
-<script type="importmap">
-{ "imports": { "three": "./vendor/three.module.min.js" } }
-</script>
+<title>VELVET BAY — an open-world crime story</title>
+<link rel="stylesheet" href="src/style.css">
+<script src="three.min.js"></script>
 </head>
 <body>
-<div id="game-canvas"></div>
+<div id="app"></div>
 
+<!-- HUD -->
 <div id="hud" class="hidden">
-  <div id="hud-top">
-    <div id="hud-money">$250</div>
-    <div id="hud-debt">DEBT $10,000</div>
-    <div id="hud-side">Rookie ★0 • COINS 0/12 • TAXI 0 • RACES 0 • FRONTS 0/3 • TURF 0/5</div>
-    <div id="hud-empire">FRONTS $0/45s • DELIVERIES 0 • HEIST PREP 0/3 • PISTOL</div>
-    <div id="hud-clock">08:00</div>
+  <div id="topbar">
+    <div id="wanted" title="Wanted level"></div>
+    <div id="clock"><span id="clock-time">18:42</span><span id="clock-day">FRI · VELVET BAY</span></div>
+    <div id="cash">$<span id="cash-val">250</span></div>
   </div>
-  <div id="hud-stars">☆☆☆☆☆</div>
-  <div id="minimap-wrap"><canvas id="minimap" width="180" height="180"></canvas><img id="minimap-img" width="180" height="180" alt="Minimap"></div>
-  <div id="crosshair"></div>
-  <div id="banner-wrap"><div id="hud-banner"></div><div id="hud-banner-sub"></div></div>
-  <div id="hud-prompt"></div>
-  <div id="hud-toast"></div>
-  <div id="hud-health">
-    <div id="hud-health-bar"><div id="hud-health-fill"></div></div>
-    <div id="hud-health-text">100 HP</div>
+  <canvas id="minimap" width="220" height="220"></canvas>
+  <div id="mission-box">
+    <div id="mission-title">VELVET SUNRISE</div>
+    <div id="mission-text">Get to the pink marker.</div>
+    <div id="mission-dist">142 m</div>
   </div>
-  <div id="hud-objective-box">
-    <div id="hud-objective"></div>
-    <div id="hud-objective-dist"></div>
+  <div id="stats">
+    <div id="health-wrap"><div id="health-bar"></div><span>HEALTH</span></div>
+    <div id="armor-wrap"><div id="armor-bar"></div><span>ARMOR</span></div>
+    <div id="weapon">PISTOL · <span id="ammo">∞</span></div>
   </div>
-  <div id="hud-ammo">12 / 60</div>
-  <div id="hud-speed"></div>
-  <div id="hud-help">WASD move / drive &nbsp;•&nbsp; E enter car / buy / turf / prep &nbsp;•&nbsp; Mouse aim, Click shoot<br>
-    1/2/3 weapons &nbsp;•&nbsp; F punch &nbsp;•&nbsp; R reload &nbsp;•&nbsp; H horn &nbsp;•&nbsp; B bribe $300 &nbsp;•&nbsp; G garage &nbsp;•&nbsp; T turf check<br>
-    Space jump / handbrake &nbsp;•&nbsp; Shift sprint / nitro &nbsp;•&nbsp; P pause</div>
+  <div id="speedo" class="hidden"><span id="speed-val">0</span><small>KM/H</small><div id="car-name">VELOCE GT</div></div>
+  <div id="toast"></div>
+  <div id="hint">WASD move · SHIFT run · E enter/exit car · CLICK shoot · F punch · M map · P pause · R radio</div>
+  <div id="crosshair">+</div>
+  <div id="damage"></div>
+  <div id="radio">RADIO · <span id="station">VELVET FM</span></div>
 </div>
 
-<div id="menu-screen" class="screen">
-  <h1>VELVET BAY</h1>
-  <h2>AN OPEN-WORLD CRIME GAME</h2>
-  <p class="story">Sun-soaked Velvet Bay. Mara Voss — ex-street racer, getaway driver — owes
-    fixer Cassius “Cash” Rowe <b>$10,000</b>. Steal cars, outrun the cops, run eight jobs
-    and pay the debt — or the bay keeps you. Then buy fronts, take turf from the Vipers
-    and plan the Velvet Vault heist. Between jobs: taxi fares, delivery runs, twelve hidden
-    Sunset Coins and a downtown street race.</p>
-  <button id="btn-start" class="btn">START ENGINE</button>
-  <button id="btn-continue" class="btn secondary hidden">CONTINUE</button>
-  <p class="controls"><b>WASD</b> move / drive &nbsp;•&nbsp; <b>E</b> steal &amp; enter car, buy fronts, turf wars &nbsp;•&nbsp;
-    <b>Mouse</b> aim, <b>Click</b> shoot &nbsp;•&nbsp; <b>1/2/3</b> pistol / shotgun / SMG &nbsp;•&nbsp; <b>F</b> punch &nbsp;•&nbsp; <b>R</b> reload<br>
-    <b>H</b> horn &nbsp;•&nbsp; <b>B</b> bribe $300 &nbsp;•&nbsp; <b>G</b> garage upgrades at Cash's &nbsp;•&nbsp; <b>T</b> turf check<br>
-    <b>Space</b> jump / handbrake &nbsp;•&nbsp; <b>Shift</b> sprint / nitro &nbsp;•&nbsp; <b>P</b> pause &amp; save<br>
-    Sound is synthesised live — no audio files. Best in desktop Chrome.</p>
+<!-- Start menu -->
+<div id="menu">
+  <div class="menu-inner">
+    <div class="logo-sub">WELCOME TO</div>
+    <h1 class="logo">VELVET<span>BAY</span></h1>
+    <p class="tagline">Sun. Sand. Sirens. An open-world crime story — all original, all yours to steal.</p>
+    <div class="menu-stats" id="menu-stats">NEW GAME · $250 · 5 MISSIONS · 1 CITY TO OWN</div>
+    <button id="play-btn">▶ &nbsp;START GAME</button>
+    <button id="continue-btn" class="hidden">CONTINUE — <span id="continue-label"></span></button>
+    <div class="controls-grid">
+      <div><b>W A S D</b><span>Move / Drive</span></div>
+      <div><b>MOUSE</b><span>Drag to look</span></div>
+      <div><b>E</b><span>Steal / exit car</span></div>
+      <div><b>CLICK</b><span>Shoot</span></div>
+      <div><b>F</b><span>Punch</span></div>
+      <div><b>SHIFT</b><span>Sprint</span></div>
+      <div><b>R</b><span>Radio station</span></div>
+      <div><b>P</b><span>Pause</span></div>
+    </div>
+    <p class="fine">A complete open world: drive, steal cars, outrun the Velvet Bay PD, run 5 story missions, fight, earn cash, save your progress. Best played with keyboard + mouse. Sound on.</p>
+  </div>
 </div>
 
-<div id="pause-screen" class="screen hidden">
-  <h1>PAUSED</h1>
-  <p class="story">Velvet Bay waits for no one — except right now.</p>
-  <p class="controls" id="pause-stats"></p>
-  <button id="btn-resume" class="btn">RESUME</button>
-  <button id="btn-save" class="btn secondary">SAVE GAME</button>
-  <button id="btn-mute" class="btn secondary">Sound: ON</button>
-  <button id="btn-restart" class="btn secondary">RESTART (CLEAR SAVE)</button>
-</div>
+<!-- Mission intro / complete cards -->
+<div id="card" class="hidden"><div id="card-kicker"></div><div id="card-title"></div><div id="card-text"></div><div id="card-sub"></div></div>
 
-<div id="busted-screen" class="screen hidden">
-  <h1 class="red">BUSTED</h1>
-  <p class="story" id="busted-lose">You lost $200 in fines.</p>
-  <button id="btn-busted" class="btn">WALK FREE</button>
-</div>
+<!-- Pause / end screens -->
+<div id="pause" class="hidden overlay"><div class="panel"><h2>PAUSED</h2><p>Velvet Bay waits for no one. Except now.</p><button id="resume-btn">RESUME</button><button id="restart-btn">RESTART DAY</button><p class="fine">Progress auto-saves after every mission.</p></div></div>
+<div id="end" class="hidden overlay"><div class="panel"><h2 id="end-title">BUSTED</h2><p id="end-text"></p><button id="end-btn">BACK TO THE BAY</button></div></div>
+<div id="win" class="hidden overlay"><div class="panel"><h2>VELVET BAY IS YOURS</h2><p id="win-text"></p><button id="win-btn">FREE ROAM</button></div></div>
 
-<div id="wasted-screen" class="screen hidden">
-  <h1 class="red">WASTED</h1>
-  <p class="story">Mara wakes up at the hospital, $200 lighter. The bay is still out there.</p>
-  <button id="btn-wasted" class="btn">GET UP</button>
-</div>
-
-<div id="win-screen" class="screen hidden">
-  <h1 class="green">DEBT PAID</h1>
-  <h2>VELVET BAY IS YOURS, MARA</h2>
-  <p class="story">Eight jobs. $10,000. Cash is paid, the slate is clean — and the city is
-    still full of cars to steal, fronts to buy and turf to hold. Free roam is open.</p>
-  <button id="btn-win" class="btn">KEEP PLAYING</button>
-</div>
-
-<script type="module" src="./src/main.js"></script>
+<script type="module" src="src/main.js"></script>
 </body>
 </html>
