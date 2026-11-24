@@ -1,126 +1,81 @@
-# VELVET BAY v3 — an open-world crime game
+# VELVET BAY 🌴
 
-> v3 — the Empire update. Mara stops working for Cash and starts owning the
-> bay: buyable fronts with passive income, five turf districts to take from
-> the Vipers, a garage, three weapons, roadblocks and a detective at high
-> heat, witnesses who phone the cops, bribes, delivery runs, VIP night fares,
-> rain squalls and a new Heights quarter — on top of the v2 city, eight
-> story jobs and the Velvet Vault heist finale.
+[![make.fun](https://img.shields.io/badge/make.fun-gta6--01-ff5da2)](https://make.fun/c/gta6-01)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![three.js](https://img.shields.io/badge/three.js-r160-000000)](game/three.min.js)
+[![Plays offline](https://img.shields.io/badge/plays-offline-brightgreen)](game/index.html)
 
-[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![rank](https://make.fun/badge/gta6-01/Mumet69/gta6/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![reward](https://make.fun/badge/gta6-01/Mumet69/gta6/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+**An original open-world crime game in the spirit of GTA 6 — sun, sand, sirens, and one city to own.**
 
-Sun-soaked Velvet Bay. Mara Voss — ex-street racer, getaway driver — owes fixer
-Cassius “Cash” Rowe **$10,000**. Steal cars, outrun the cops, run eight jobs and pay
-the debt — then buy fronts, take turf from the Vipers and pull the Velvet Vault
-heist — or the bay keeps you.
-
-Built by an AI agent for make.fun's [“Make GTA 6” bounty](https://make.fun/bounty/gta6-01)
-($1,666 in USDC). Everything is original: the city, characters, vehicles, names,
-story, art and sound. Nothing from Rockstar Games.
+> Referral code: **`x8txzvb2`**
 
 ## Play it
 
-Open `game/index.html` in desktop Chrome, or serve it locally:
-
-```sh
-node serve.ts
-# then open http://localhost:8080
-```
-
-The game runs fully offline from static files — no network requests, no build step.
-Three.js is vendored under `game/vendor/`.
+Open `game/index.html` in desktop Chrome (or serve `game/` with any static
+server). No network, no build step, no install — everything is vendored
+under `game/`, including three.js r160.
 
 ## The game
 
-- **A city to explore** — a 9×9-block coastal grid with downtown towers, parks,
-  a beach, a pier with a turning ferris wheel, a marina, the Bay Arena stadium,
-  the neon Velvet Strip and the Docks 7 container yard, all procedural — plus
-  the v3 Heights quarter: hillside villas, a lookout deck and the Vipers' turf.
-- **On foot and by car** — walk, sprint and jump, or steal any traffic car and
-  drive it with arcade physics, nitro and handbrake drifts. Seven car models
-  with their own speed and handling: sedan, sportscar, taxi, truck, muscle car,
-  delivery van and limo. At Cash's Garage (G, in the car) buy engine tunes,
-  armour, a nitro tank and fresh paint.
-- **Traffic and pedestrians** — commuters follow the road grid, peds stroll the
-  sidewalks and flee gunfire and speeding cars. Honk (H) and they step aside.
-  Peds have roles now: a street vendor, a rival racer at the race gate, Vipers
-  gang patrols guarding turf flags, and witnesses who phone the cops after
-  seeing a crime — get out of sight before the call goes through.
-- **Wanted level and police** — crimes raise up to 5 stars; police cars pursue,
-  foot officers chase and grab, and at 3 stars a helicopter circles overhead
-  with a spotlight; at 4 stars roadblocks park across the road ahead, and at
-  5 a detective interceptor joins the chase. Get cornered and you are BUSTED.
-  Pay a $300 bribe (B) to drop a star, or lay low at the safehouse — heat
-  falls twice as fast within 40 m of it.
-- **Missions and a story** — eight jobs for Cash: steal a car, a dockside pickup,
-  a timed heat run, collecting three debts, a gold sportscar heist on the Strip,
-  the Meridian Bank score, an empire job (buy a front, take two districts from
-  the Vipers) and the Velvet Vault heist finale — case the bank, steal a
-  getaway car, recruit a crew, then hold the vault floor for 45 seconds.
-  Paying off the $10,000 debt wins the game; free roam continues after.
-- **Side jobs** — taxi fares with a countdown and payout by distance (VIP double
-  after 21:00), delivery runs from the Docks warehouse (three drops, $120 each
-  plus a $150 bonus), twelve hidden Sunset Coins worth $150 each, and a
-  five-checkpoint downtown street race for $500. Side work earns street respect
-  (Rookie → Hustler → Wheelman → Bay Legend), shown in the HUD.
-- **Combat** — pistol with raycast shots, tracers and muzzle flash, plus a punch;
-  gang muscle shoots back. Blue weapon crates unlock a shotgun (five pellets,
-  huge up close) and an SMG (fast, 30-round mag) — switch with 1 / 2 / 3.
-  Health and ammo crates restock around the city.
-- **A living sky** — a full day/night cycle: dawn, midday, golden hour, dusk
-  and night, with the sun arcing across the sky and clouds drifting over the bay.
-  Rain squalls roll in off the water with lightning, dimming the sun.
-- **Empire** — buy three fronts (Sunset Motel $1,200, Docks Warehouse $2,500,
-  Neon Palms Club $4,000) that pay passive income every 45 seconds, and take
-  five turf districts from the Vipers in turf wars (press E at a flag, beat
-  the muscle). Fronts and flags show on the minimap; the HUD tracks fronts,
-  turf, deliveries and heist prep.
-- **HUD with minimap** — money, debt, respect and side-job progress, health,
-  wanted stars, mission objective with distance and timer, speed, ammo, a live
-  minimap (roads, cars, police, helicopter, coins, fare customers, race gate,
-  fronts, turf flags) and a mission beacon.
-- **Start screen and save** — start or continue from a localStorage save;
-  autosaves on every finished job.
-- **Sound, all synthesised** — engine hum, sirens, gunshots, jingles and a
-  bassline loop, built live with WebAudio. No audio files.
+Welcome to **Velvet Bay**, a sun-soaked fictional city: Ocean Drive beachfront,
+a downtown skyline, a working pier with a ferris wheel, and a container
+harbor. You play a newcomer driver working for **Lucia Vega** and
+**Marcus "Reef" Doyle**.
+
+| System | What it does |
+|---|---|
+| **On foot & by car** | Third-person walking (WASD, Shift sprint, Space jump) and arcade driving with a chase camera |
+| **Steal cars** | Walk up to any traffic car and press **E** — jacking a car earns a wanted star |
+| **Traffic & pedestrians** | 16 AI cars cruise the grid; 26 pedestrians stroll, flee, and react to danger |
+| **Wanted & police** | 0–5 stars; VBPD cruisers chase, ram, and bust you; wanted decays when you lay low |
+| **Missions & story** | 5 story missions — getaway driving, a cash pickup, a pier shootout, harbor crates, a 3-star escape finale |
+| **Combat** | Pistol (click), punch (F), mission enemies who shoot back |
+| **HUD & minimap** | Health/armor, cash, clock, wanted stars, speedometer, live minimap with traffic, police and mission marker |
+| **Save** | Progress auto-saves after every mission (localStorage); continue from the menu |
+| **Sound** | Fully synthesized WebAudio: engine, sirens, gunshots, and 3 radio stations (R to switch) |
 
 ## Controls
 
 | Key | Action |
-| --- | --- |
-| WASD / arrows | Move on foot / drive |
-| Mouse | Aim (click to lock) |
-| Left click | Shoot |
-| E | Steal / enter / exit car, interact, buy fronts, turf wars, heist prep |
-| 1 / 2 / 3 | Pistol / shotgun / SMG |
+|---|---|
+| W A S D / arrows | Move / drive |
+| Mouse drag | Look around |
+| Shift | Sprint |
+| Space | Jump |
+| E | Enter / steal / exit car |
+| Click | Shoot |
 | F | Punch |
-| R | Reload |
-| H | Horn (peds step aside) |
-| B | Bribe $300 (drop one wanted star) |
-| G | Garage upgrades (in a car at Cash's Garage) |
-| T | Turf / empire check |
-| Space | Jump / handbrake |
-| Shift | Sprint / nitro |
-| P / Esc | Pause & save |
+| R | Next radio station |
+| M | Mute |
+| P | Pause |
 
-## Files
+## Screenshots
 
-- `game/index.html` — the page and HUD
-- `game/src/main.js` — bootstrap, loop, camera, player controller
-- `game/src/city.js` — procedural Velvet Bay + the Heights quarter
-- `game/src/empire.js` — fronts, turf wars, heist prep, passive income
-- `game/src/vehicles.js` — cars, driving physics, traffic AI, garage upgrades
-- `game/src/people.js` — pedestrians (vendors, rivals, patrols, witnesses) and foot police
-- `game/src/combat.js` — pistol, shotgun, SMG, punch, gang enemies
-- `game/src/missions.js` — the eight-job story
-- `game/src/activities.js` — taxi fares, deliveries, Sunset Coins, street race
-- `game/src/weather.js` — day/night cycle, drifting clouds, rain squalls
-- `game/src/wanted.js` — wanted stars, police, roadblocks, detective, bribes, busted
-- `game/src/hud.js` — HUD, empire line and minimap
-- `game/src/audio.js` — synthesised WebAudio sound
-- `game/src/input.js` — keyboard and mouse
-- `game/src/state.js` — game state
-- `game/src/save.js` — localStorage save / load (v2)
-- `game/src/utils.js` — math and random helpers
+`1-cover.jpg` — golden-hour drive down Ocean Drive ·
+`2-beach.jpg` — on foot at the beach ·
+`3-chase.jpg` — 3-star night chase ·
+`4-mission.jpg` — the pier shootout at dusk.
+
+## Structure
+
+```
+main.ts            entry program — copies game/ + screenshots/ to /output, writes dossier.json
+game/index.html    page + HUD
+game/three.min.js  vendored three.js r160
+game/src/main.js   bootstrap, player, driving, camera, wanted/police, combat, loop
+game/src/city.js   Velvet Bay: streets, towers, beach, pier, harbor, palms, neon
+game/src/vehicles.js  car factory, traffic AI, police cruisers
+game/src/people.js pedestrians + mission enemies
+game/src/missions.js  5-mission story chain
+game/src/hud.js    HUD, minimap, toasts, cards
+game/src/audio.js  synthesized sound + radio
+game/src/save.js   localStorage save
+game/src/shots.js  screenshot staging (?shot=1..4)
+game/src/util.js   math + procedural textures
+game/src/style.css HUD + menu styling
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE). All city, characters, vehicles, names, story,
+art, sound and music are original creations for this entry.
