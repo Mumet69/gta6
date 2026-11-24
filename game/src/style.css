@@ -1,0 +1,59 @@
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:#0b1020;font-family:'Segoe UI',system-ui,Arial,sans-serif;color:#fff}
+#app,#app canvas{position:fixed;inset:0;display:block}
+.hidden{display:none!important}
+#hud{position:fixed;inset:0;pointer-events:none;z-index:5}
+#topbar{position:absolute;top:14px;left:50%;transform:translateX(-50%);display:flex;gap:18px;align-items:center}
+#wanted{font-size:26px;letter-spacing:4px;color:#ffd23f;text-shadow:0 0 12px rgba(255,60,60,.8);min-width:150px;text-align:center}
+#wanted .off{color:rgba(255,255,255,.25);text-shadow:none}
+#clock{text-align:center;background:rgba(8,12,30,.55);border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:4px 14px;backdrop-filter:blur(4px)}
+#clock-time{font-size:20px;font-weight:700;letter-spacing:2px}
+#clock-day{display:block;font-size:10px;letter-spacing:3px;color:#7fe7ff}
+#cash{font-size:22px;font-weight:800;color:#7dff9a;text-shadow:0 2px 8px rgba(0,0,0,.6);background:rgba(8,12,30,.55);border:1px solid rgba(125,255,154,.4);border-radius:8px;padding:5px 14px}
+#minimap{position:absolute;left:16px;bottom:16px;width:220px;height:220px;border-radius:50%;border:3px solid rgba(255,255,255,.65);box-shadow:0 0 0 4px rgba(0,0,0,.35),0 8px 30px rgba(0,0,0,.5);background:#0e1a2e}
+#mission-box{position:absolute;left:16px;top:16px;max-width:320px;background:rgba(8,12,30,.62);border-left:4px solid #ff5da2;border-radius:8px;padding:10px 14px;backdrop-filter:blur(4px)}
+#mission-title{font-size:13px;font-weight:800;letter-spacing:2px;color:#ff8ac2}
+#mission-text{font-size:14px;margin-top:3px;line-height:1.35}
+#mission-dist{font-size:12px;color:#7fe7ff;margin-top:4px;letter-spacing:1px}
+#stats{position:absolute;right:16px;bottom:16px;width:230px;text-align:right}
+#health-wrap,#armor-wrap{position:relative;height:18px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.35);border-radius:9px;overflow:hidden;margin-bottom:6px}
+#health-bar{height:100%;width:100%;background:linear-gradient(90deg,#ff5d5d,#ff9d5d);transition:width .2s}
+#armor-bar{height:100%;width:0%;background:linear-gradient(90deg,#5db9ff,#7fe7ff);transition:width .2s}
+#health-wrap span,#armor-wrap span{position:absolute;inset:0;font-size:10px;letter-spacing:3px;line-height:17px;text-align:center;color:#fff;text-shadow:0 1px 2px #000}
+#weapon{font-size:14px;font-weight:700;letter-spacing:1px;background:rgba(8,12,30,.55);border:1px solid rgba(255,255,255,.25);display:inline-block;padding:5px 12px;border-radius:8px}
+#speedo{position:absolute;right:20px;bottom:150px;text-align:right;text-shadow:0 2px 6px #000}
+#speed-val{font-size:52px;font-weight:800;line-height:1}
+#speedo small{font-size:13px;letter-spacing:2px;margin-left:6px}
+#car-name{font-size:13px;letter-spacing:3px;color:#ffd23f;font-weight:700}
+#toast{position:absolute;left:50%;bottom:110px;transform:translateX(-50%);font-size:19px;font-weight:700;letter-spacing:1px;text-shadow:0 2px 8px #000;text-align:center;opacity:0;transition:opacity .3s;white-space:nowrap}
+#hint{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);font-size:12px;letter-spacing:1px;color:rgba(255,255,255,.75);text-shadow:0 1px 4px #000;background:rgba(0,0,0,.35);padding:5px 12px;border-radius:20px;white-space:nowrap}
+#crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:22px;color:rgba(255,255,255,.9);text-shadow:0 0 6px #000}
+#damage{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 120px rgba(255,0,0,0);transition:box-shadow .15s}
+#damage.hit{box-shadow:inset 0 0 140px rgba(255,0,0,.75)}
+#radio{position:absolute;right:16px;top:16px;font-size:12px;letter-spacing:2px;background:rgba(8,12,30,.55);border:1px solid rgba(255,255,255,.25);padding:6px 12px;border-radius:8px}
+#radio span{color:#ff8ac2}
+#menu{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,rgba(20,8,40,.82),rgba(4,20,40,.78) 55%,rgba(60,8,50,.7))}
+.menu-inner{text-align:center;max-width:640px;padding:30px}
+.logo-sub{letter-spacing:8px;font-size:14px;color:#7fe7ff}
+.logo{font-size:84px;font-weight:900;line-height:.95;letter-spacing:2px;background:linear-gradient(180deg,#fff,#ffd23f 45%,#ff5da2 75%,#b45cff);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 60px rgba(255,93,162,.35)}
+.logo span{display:block;font-size:64px}
+.tagline{margin:14px 0 8px;font-size:17px;color:#e8ecff}
+.menu-stats{font-size:13px;letter-spacing:2px;color:#ffd23f;margin-bottom:18px}
+#menu button,#pause button,#end button,#win button{pointer-events:auto;cursor:pointer;font-size:17px;font-weight:800;letter-spacing:2px;color:#12041f;background:linear-gradient(90deg,#ffd23f,#ff5da2);border:none;border-radius:10px;padding:13px 34px;margin:6px;box-shadow:0 6px 24px rgba(255,93,162,.45)}
+#menu button:hover{transform:translateY(-1px)}
+#continue-btn{background:linear-gradient(90deg,#7fe7ff,#5db9ff)!important}
+.controls-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:22px 0 12px}
+.controls-grid div{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:8px 4px}
+.controls-grid b{display:block;font-size:13px;color:#ffd23f}
+.controls-grid span{font-size:11px;color:#cdd6ff}
+.fine{font-size:12px;color:rgba(255,255,255,.65);line-height:1.5}
+#card{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9;text-align:center;pointer-events:none;text-shadow:0 2px 10px #000}
+#card-kicker{letter-spacing:6px;font-size:14px;color:#7fe7ff}
+#card-title{font-size:52px;font-weight:900;letter-spacing:2px}
+#card-text{font-size:17px;color:#e8ecff;max-width:520px;margin:8px auto}
+#card-sub{font-size:15px;color:#ffd23f;font-weight:700}
+.overlay{position:fixed;inset:0;z-index:11;display:flex;align-items:center;justify-content:center;background:rgba(4,6,18,.72)}
+.panel{text-align:center;background:rgba(10,14,34,.9);border:1px solid rgba(255,255,255,.25);border-radius:16px;padding:34px 44px;max-width:520px}
+.panel h2{font-size:40px;letter-spacing:3px;margin-bottom:10px}
+.panel p{color:#cdd6ff;margin-bottom:16px;line-height:1.5}
+@media (max-width:760px){.logo{font-size:52px}.logo span{font-size:40px}#minimap{width:150px;height:150px}.controls-grid{grid-template-columns:repeat(2,1fr)}}
