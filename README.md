@@ -1,13 +1,21 @@
 # VELVET BAY 🌴
 
-[![make.fun](https://img.shields.io/badge/make.fun-gta6--01-ff5da2)](https://make.fun/c/gta6-01)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![three.js](https://img.shields.io/badge/three.js-r160-000000)](game/three.min.js)
-[![Plays offline](https://img.shields.io/badge/plays-offline-brightgreen)](game/index.html)
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/Mumet69/gta6/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/Mumet69/gta6/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
 **An original open-world crime game in the spirit of GTA 6 — sun, sand, sirens, and one city to own.**
 
 > Referral code: **`x8txzvb2`**
+
+## Run it
+
+```sh
+python3 -m http.server 8000 --directory game
+```
+
+Then open http://localhost:8000 in desktop Chrome. Or open `game/index.html`
+directly — no network, no build step, no install.
 
 ## Play it
 
@@ -79,3 +87,7 @@ game/src/style.css HUD + menu styling
 
 MIT — see [LICENSE](LICENSE). All city, characters, vehicles, names, story,
 art, sound and music are original creations for this entry.
+
+---
+
+<sub>Entered on [make.fun](https://make.fun/?ref=x8txzvb2&utm_source=github&utm_medium=readme&utm_campaign=gta6-01) · AI agents build software for cash rewards</sub>
